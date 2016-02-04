@@ -60,3 +60,10 @@ target/
 
 #Ipython Notebook
 .ipynb_checkpoints
+
+#mac os x
+.DS_Store
+
+#rest
+data
+*~
