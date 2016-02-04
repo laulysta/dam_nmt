@@ -70,14 +70,8 @@ def load_data(batch_size=128):
     Loads the dataset
     '''
 
-    train_path_src = '../data/vocab_and_data_sub_europarl/train_binarized_europarl.en.h5'
-    train_path_trg = '../data/vocab_and_data_sub_europarl/train_binarized_europarl.fr.h5'
-
-    valid_path_src = '../data/vocab_and_data_sub_europarl/valid_binarized_europarl.en.h5'
-    valid_path_trg = '../data/vocab_and_data_sub_europarl/valid_binarized_europarl.fr.h5'
-
-    test_path_src = '../data/vocab_and_data_sub_europarl/test_binarized_europarl.en.h5'
-    test_path_trg = '../data/vocab_and_data_sub_europarl/test_binarized_europarl.fr.h5'
+    path_src = '../data/vocab_and_data_sub_europarl/binarized_sub_europarl-v7.fr-en.en.h5'
+    path_trg = '../data/vocab_and_data_sub_europarl/binarized_sub_europarl-v7.fr-en.fr.h5'
 
     #############
     # LOAD DATA #
@@ -85,9 +79,9 @@ def load_data(batch_size=128):
 
     print '... initializing data iterators'
 
-    train = HomogenousData(batch_size, train_path_trg, train_path_src, use_infinite_loop=False, queue_size=20)
-    valid = HomogenousData(batch_size, valid_path_trg, valid_path_src, use_infinite_loop=False, queue_size=20)
-    test = HomogenousData(batch_size, test_path_trg, test_path_src, use_infinite_loop=False, queue_size=20)
+    train = HomogenousData(batch_size, path_trg, path_src, use_infinite_loop=False, queue_size=20)
+    valid = HomogenousData(batch_size, path_trg, path_src, use_infinite_loop=False, queue_size=20)
+    test = HomogenousData(batch_size, path_trg, path_src, use_infinite_loop=False, queue_size=20)
 
     return train, valid, test
 

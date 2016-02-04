@@ -61,7 +61,6 @@ modelName = dirPath = os.path.join(dirPath, dirModelName + ".npz")
 if dataset == "sub_europarl":
     n_words_src = 1025
     n_words_trg = 1153
-    dataset = 'stan'
     dictionary_trg='../data/vocab_and_data_sub_europarl/vocab_sub_europarl.fr.pkl'
     dictionary_src='../data/vocab_and_data_sub_europarl/vocab_sub_europarl.en.pkl'
 
