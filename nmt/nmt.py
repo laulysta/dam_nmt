@@ -5,8 +5,11 @@ import theano
 import theano.tensor as tensor
 from theano.sandbox.rng_mrg import MRG_RandomStreams as RandomStreams
 
+from ipdb import set_trace as dbg
+
 import cPickle as pkl
 import numpy
+import numpy as np
 import copy
 
 import os
@@ -1259,9 +1262,13 @@ def build_model(tparams, options):
 
     # description string: #words x #samples
     x = tensor.matrix('x', dtype='int64')
+    x.tag.test_value = np.zeros((50, 2), dtype="int64")
     x_mask = tensor.matrix('x_mask', dtype='float32')
+    x_mask.tag.test_value = np.zeros((50, 2), dtype="float32")
     y = tensor.matrix('y', dtype='int64')
+    y.tag.test_value = np.zeros((50, 2), dtype="int64")
     y_mask = tensor.matrix('y_mask', dtype='float32')
+    y_mask.tag.test_value = np.zeros((50, 2), dtype="float32")
 
     xr = x[::-1]
     xr_mask = x_mask[::-1]
@@ -1347,6 +1354,7 @@ def build_model(tparams, options):
 # build a sampler
 def build_sampler(tparams, options, trng):
     x = tensor.matrix('x', dtype='int64')
+    x.tag.test_value = np.zeros((50, 2), dtype="int64")
     xr = x[::-1]
     n_timesteps = x.shape[0]
     n_samples = x.shape[1]
@@ -1386,11 +1394,13 @@ def build_sampler(tparams, options, trng):
     y = tensor.vector('y_sampler', dtype='int64')
     
     init_state = tensor.matrix('init_state', dtype='float32')
+    init_state.tag.test_value = np.zeros((2, 20), dtype="float32")
     if options['decoder'].startswith('lstm'):
         init_memory = tensor.matrix('init_memory', dtype='float32')
+        #init_memory.tag.test_value = np.zeros((2, 20), dtype="float32")
     else:
         init_memory = None
-    
+
     n_timesteps = ctx.shape[0]
         
     # if it's the first word, emb should be all zero
