@@ -818,6 +818,7 @@ def gru_cond_layer(tparams, state_below, options, prefix='gru',
         pctx__ = tensor.tanh(pctx__)
         alpha = tensor.dot(pctx__, U_att)+c_tt
         alpha = alpha.reshape([alpha.shape[0], alpha.shape[1]])
+        # TODO: replace with numerically stable theano softmax
         alpha = tensor.exp(alpha)
         if context_mask:
             alpha = alpha * context_mask
@@ -875,6 +876,163 @@ def gru_cond_layer(tparams, state_below, options, prefix='gru',
                                     profile=profile,
                                     strict=True)
     return rval
+
+
+def gru_double_att_layer(tparams, state_below, options, prefix='gru', 
+                         mask=None, context=None, one_step=False, 
+                         init_memory=None, init_state=None, 
+                         context_mask=None,
+                         **kwargs):
+
+    assert context, 'Context must be provided'
+
+    if one_step:
+        assert init_state, 'previous state must be provided'
+
+    nsteps = state_below.shape[0]
+    if state_below.ndim == 3:
+        n_samples = state_below.shape[1]
+    else:
+        n_samples = 1
+
+    # mask
+    if mask == None:
+        mask = tensor.alloc(1., state_below.shape[0], 1)
+
+    dim = tparams[_p(prefix, 'Wcx')].shape[1]
+
+    # initial/previous state
+    if init_state == None:
+        init_state = tensor.alloc(0., n_samples, dim)
+
+    # projected context 
+    assert context.ndim == 3, 'Context must be 3-d: #annotation x #sample x dim'
+    pctx_ = tensor.dot(context, tparams[_p(prefix,'Wc_att')]) + tparams[_p(prefix,'b_att')]
+        
+    def _slice(_x, n, dim):
+        if _x.ndim == 3:
+            return _x[:, :, n*dim:(n+1)*dim]
+        return _x[:, n*dim:(n+1)*dim]
+
+    # projected x
+    state_belowx = tensor.dot(state_below, tparams[_p(prefix, 'Wx')]) + tparams[_p(prefix, 'bx')]
+    state_below_ = tensor.dot(state_below, tparams[_p(prefix, 'W')]) + tparams[_p(prefix, 'b')]
+    #state_belowc = tensor.dot(state_below, tparams[_p(prefix, 'Wi_att')])
+    #import ipdb; ipdb.set_trace()
+    def _step_slice(m_, x_, xx_, h_, ctx_, alpha_, phist_, idx_, pctx_, cc_,
+                    U, Wc, W_comb_att, U_att, c_tt, Ux, Wcx, U_nl, Ux_nl, b_nl, bx_nl):
+        preact1 = tensor.dot(h_, U)
+        preact1 += x_
+        preact1 = tensor.nnet.sigmoid(preact1)
+
+        r1 = _slice(preact1, 0, dim)
+        u1 = _slice(preact1, 1, dim)
+
+        preactx1 = tensor.dot(h_, Ux)
+        preactx1 *= r1
+        preactx1 += xx_
+
+        h1 = tensor.tanh(preactx1)
+
+        h1 = u1 * h_ + (1. - u1) * h1
+        h1 = m_[:,None] * h1 + (1. - m_)[:,None] * h_
+        
+        # attention
+        pstate_ = tensor.dot(h1, W_comb_att)
+        pctx__ = pctx_ + pstate_[None,:,:] 
+        #pctx__ += xc_
+        pctx__ = tensor.tanh(pctx__)
+        alpha = tensor.dot(pctx__, U_att)+c_tt
+        alpha = alpha.reshape([alpha.shape[0], alpha.shape[1]])
+        # TODO: replace with numerically stable theano softmax
+        alpha = tensor.exp(alpha)
+        if context_mask:
+            alpha = alpha * context_mask
+        alpha = alpha / alpha.sum(0, keepdims=True)
+        ctx_ = (cc_ * alpha[:,:,None]).sum(0) # current context
+
+
+        ###############################################
+        
+        pdecatt = phist_[:idx_]
+        pdecatt +=  tensor.dot(h1, tparams[_p(prefix,'W_currentState_decatt')])
+        pdecatt +=  tensor.dot(ctx_, tparams[_p(prefix,'W_ctx_decatt')])
+        
+        pdecatt = tensor.tanh(pdecatt)
+        alpha_decatt = tensor.dot(pdecatt, U_decatt)+c_decatt
+        alpha_decatt = alpha_decatt.reshape([alpha_decatt.shape[0], alpha_decatt.shape[1]])
+        # TODO: replace with numerically stable theano softmax
+        alpha_decatt = tensor.exp(alpha_decatt)
+        new_mask = mask[:idx_]
+        alpha_decatt = alpha_decatt * new_mask
+        alpha_decatt = alpha_decatt / alpha_decatt.sum(0, keepdims=True)
+        ctx_ = (cc_ * alpha_decatt[:,:,None]).sum(0)
+
+        ###############################################
+
+        preact2 = tensor.dot(h1, U_nl)+b_nl
+        preact2 += tensor.dot(ctx_, Wc)
+        preact2 = tensor.nnet.sigmoid(preact2)
+
+        r2 = _slice(preact2, 0, dim)
+        u2 = _slice(preact2, 1, dim)
+
+        preactx2 = tensor.dot(h1, Ux_nl)+bx_nl
+        preactx2 *= r2
+        preactx2 += tensor.dot(ctx_, Wcx)
+
+        h2 = tensor.tanh(preactx2)
+
+        h2 = u2 * h1 + (1. - u2) * h2
+        h2 = m_[:,None] * h2 + (1. - m_)[:,None] * h1
+
+
+        ################################################
+        # History and index update
+        pdec_hiddens = tensor.dot(h1, tparams[_p(prefix,'W_h1_decatt')]) + tparams[_p(prefix,'b_decatt')]
+        pdec_hiddens += tensor.dot(h2, tparams[_p(prefix,'W_h2_decatt')])
+
+        new_phist = tensor.set_subtensor(phist[idx_], pdec_hiddens)
+
+        return h2, ctx_, alpha.T, new_phist, idx_+1 #, pstate_, preact, preactx, r, u
+
+    seqs = [mask, state_below_, state_belowx]
+    #seqs = [mask, state_below_, state_belowx, state_belowc]
+    _step = _step_slice
+
+    shared_vars = [tparams[_p(prefix, 'U')],
+                   tparams[_p(prefix, 'Wc')],
+                   tparams[_p(prefix,'W_comb_att')],
+                   tparams[_p(prefix,'U_att')], 
+                   tparams[_p(prefix, 'c_tt')], 
+                   tparams[_p(prefix, 'Ux')], 
+                   tparams[_p(prefix, 'Wcx')],
+                   tparams[_p(prefix, 'U_nl')],
+                   tparams[_p(prefix, 'Ux_nl')],
+                   tparams[_p(prefix, 'b_nl')],
+                   tparams[_p(prefix, 'bx_nl')]]
+
+    if one_step:
+        rval = _step(*(seqs+[init_state, None, None, pctx_, context]+shared_vars))
+    else:
+        rval, updates = theano.scan(_step, 
+                                    sequences=seqs,
+                                    outputs_info = [init_state, 
+                                                    tensor.alloc(0., n_samples, context.shape[2]),
+                                                    tensor.alloc(0., n_samples, context.shape[0]),
+                                                    tensor.alloc(0., nsteps, n_samples, dim*2), # history of decoder LSTM hidden layers
+                                                    tensor.alloc(0)], # index of the current word (time step)
+                                                    #None, None, None, 
+                                                    #None, None],
+                                    non_sequences=[pctx_,
+                                                   context]+shared_vars,
+                                    name=_p(prefix, '_layers'),
+                                    n_steps=nsteps,
+                                    profile=profile,
+                                    strict=True)
+    return rval
+
+
 
 
 # Hierarchical GRU layer 
