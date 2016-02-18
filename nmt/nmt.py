@@ -919,8 +919,9 @@ def gru_double_att_layer(tparams, state_below, options, prefix='gru',
     state_below_ = tensor.dot(state_below, tparams[_p(prefix, 'W')]) + tparams[_p(prefix, 'b')]
     #state_belowc = tensor.dot(state_below, tparams[_p(prefix, 'Wi_att')])
     #import ipdb; ipdb.set_trace()
-    def _step_slice(m_, x_, xx_, h_, ctx_, alpha_, phist_, idx_, pctx_, cc_,
-                    U, Wc, W_comb_att, U_att, c_tt, Ux, Wcx, U_nl, Ux_nl, b_nl, bx_nl):
+    def _step_slice(m_, x_, xx_, h_, ctx_, alpha_, phist_decatt, hist_decatt, idx_, pctx_, cc_,
+                    U, Wc, W_comb_att, U_att, c_tt, Ux, Wcx, U_nl, Ux_nl, b_nl, bx_nl, 
+                    W_currentState_decatt, W_ctx_decatt, Wh, W_h1_decatt, W_h2_decatt, b_decatt):
         preact1 = tensor.dot(h_, U)
         preact1 += x_
         preact1 = tensor.nnet.sigmoid(preact1)
@@ -954,9 +955,9 @@ def gru_double_att_layer(tparams, state_below, options, prefix='gru',
 
         ###############################################
         
-        pdecatt = phist_[:idx_]
-        pdecatt +=  tensor.dot(h1, tparams[_p(prefix,'W_currentState_decatt')])
-        pdecatt +=  tensor.dot(ctx_, tparams[_p(prefix,'W_ctx_decatt')])
+        pdecatt = phist_decatt[:idx_]
+        pdecatt +=  tensor.dot(h1, W_currentState_decatt)
+        pdecatt +=  tensor.dot(ctx_, W_ctx_decatt)
         
         pdecatt = tensor.tanh(pdecatt)
         alpha_decatt = tensor.dot(pdecatt, U_decatt)+c_decatt
@@ -966,12 +967,13 @@ def gru_double_att_layer(tparams, state_below, options, prefix='gru',
         new_mask = mask[:idx_]
         alpha_decatt = alpha_decatt * new_mask
         alpha_decatt = alpha_decatt / alpha_decatt.sum(0, keepdims=True)
-        ctx_ = (cc_ * alpha_decatt[:,:,None]).sum(0)
+        ctx_decatt = (hist_decatt[:idx_] * alpha_decatt[:,:,None]).sum(0)
 
         ###############################################
 
         preact2 = tensor.dot(h1, U_nl)+b_nl
         preact2 += tensor.dot(ctx_, Wc)
+        preact2 += tensor.dot(ctx_decatt, Wh)
         preact2 = tensor.nnet.sigmoid(preact2)
 
         r2 = _slice(preact2, 0, dim)
@@ -989,12 +991,13 @@ def gru_double_att_layer(tparams, state_below, options, prefix='gru',
 
         ################################################
         # History and index update
-        pdec_hiddens = tensor.dot(h1, tparams[_p(prefix,'W_h1_decatt')]) + tparams[_p(prefix,'b_decatt')]
-        pdec_hiddens += tensor.dot(h2, tparams[_p(prefix,'W_h2_decatt')])
+        pdec_hiddens = tensor.dot(h1, W_h1_decatt) + b_decatt
+        pdec_hiddens += tensor.dot(h2, W_h2_decatt)
 
-        new_phist = tensor.set_subtensor(phist[idx_], pdec_hiddens)
+        new_phist_decatt = tensor.set_subtensor(phist_decatt[idx_], pdec_hiddens)
+        new_hist_decatt = tensor.set_subtensor(hist_decatt[idx_], tensor.concatenate([h1,h2], axis=1))
 
-        return h2, ctx_, alpha.T, new_phist, idx_+1 #, pstate_, preact, preactx, r, u
+        return h2, ctx_, alpha.T, new_phist_decatt, new_hist_decatt, idx_+1 #, pstate_, preact, preactx, r, u
 
     seqs = [mask, state_below_, state_belowx]
     #seqs = [mask, state_below_, state_belowx, state_belowc]
@@ -1010,7 +1013,13 @@ def gru_double_att_layer(tparams, state_below, options, prefix='gru',
                    tparams[_p(prefix, 'U_nl')],
                    tparams[_p(prefix, 'Ux_nl')],
                    tparams[_p(prefix, 'b_nl')],
-                   tparams[_p(prefix, 'bx_nl')]]
+                   tparams[_p(prefix, 'bx_nl')],
+                   tparams[_p(prefix, 'W_currentState_decatt')],
+                   tparams[_p(prefix, 'W_ctx_decatt')],
+                   tparams[_p(prefix, 'Wh')],
+                   tparams[_p(prefix, 'W_h1_decatt')],
+                   tparams[_p(prefix, 'W_h2_decatt')],
+                   tparams[_p(prefix, 'b_decatt')]]
 
     if one_step:
         rval = _step(*(seqs+[init_state, None, None, pctx_, context]+shared_vars))
@@ -1020,6 +1029,7 @@ def gru_double_att_layer(tparams, state_below, options, prefix='gru',
                                     outputs_info = [init_state, 
                                                     tensor.alloc(0., n_samples, context.shape[2]),
                                                     tensor.alloc(0., n_samples, context.shape[0]),
+                                                    tensor.alloc(0., nsteps, n_samples, dim), # projections of decoder LSTM hidden layers
                                                     tensor.alloc(0., nsteps, n_samples, dim*2), # history of decoder LSTM hidden layers
                                                     tensor.alloc(0)], # index of the current word (time step)
                                                     #None, None, None, 
