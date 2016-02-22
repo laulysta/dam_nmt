@@ -89,6 +89,7 @@ layers = {'ff': ('param_init_fflayer', 'fflayer'),
           'lstm_cond': ('param_init_lstm_cond', 'lstm_cond_layer'),
           'gru': ('param_init_gru', 'gru_layer'),
           'gru_cond': ('param_init_gru_cond', 'gru_cond_layer'),
+          'gru_cond_double': ('param_init_gru_cond_double', 'gru_cond_double_layer'),
           'gru_cond_simple': ('param_init_gru_cond_simple', 'gru_cond_simple_layer'),
           'gru_hiero': ('param_init_gru_hiero', 'gru_hiero_layer'),
           'rnn': ('param_init_rnn', 'rnn_layer'),
@@ -752,6 +753,80 @@ def param_init_gru_cond(options, params, prefix='gru_cond', nin=None, dim=None, 
 
     return params
 
+def param_init_gru_cond_double(options, params, prefix='gru_cond_double', nin=None, dim=None, dimctx=None):
+    if nin == None:
+        nin = options['dim']
+    if dim == None:
+        dim = options['dim']
+    if dimctx == None:
+        dimctx = options['dim']
+
+    params = param_init_gru_nonlin(options, params, prefix, nin=nin, dim=dim)
+
+    # context to LSTM
+    Wc = norm_weight(dimctx,dim*2)
+    params[_p(prefix,'Wc')] = Wc
+
+    Wcx = norm_weight(dimctx,dim)
+    params[_p(prefix,'Wcx')] = Wcx
+
+    # Double attention part to the LSTM
+    Wh = norm_weight(dim*2,dim*2)
+    params[_p(prefix,'Wh')] = Wh
+
+    Whx = norm_weight(dim*2,dim)
+    params[_p(prefix,'Whx')] = Whx
+    
+    
+
+    # attention: combined -> hidden
+    W_comb_att = norm_weight(dim,dimctx)
+    params[_p(prefix,'W_comb_att')] = W_comb_att
+
+    # attention: context -> hidden
+    Wc_att = norm_weight(dimctx)
+    params[_p(prefix,'Wc_att')] = Wc_att
+
+    # attention: hidden bias
+    b_att = numpy.zeros((dimctx,)).astype('float32')
+    params[_p(prefix,'b_att')] = b_att
+
+    # attention: 
+    U_att = norm_weight(dimctx,1)
+    params[_p(prefix,'U_att')] = U_att
+    c_att = numpy.zeros((1,)).astype('float32')
+    params[_p(prefix, 'c_tt')] = c_att
+
+
+
+
+    # Decoder attention part on the history of the LSTM
+    
+    W_currentState_decatt = norm_weight(dim,dimctx)
+    params[_p(prefix,'W_currentState_decatt')] = W_currentState_decatt
+
+    W_ctx_decatt = norm_weight(dimctx)
+    params[_p(prefix,'W_ctx_decatt')] = W_ctx_decatt
+
+    W_h1_decatt = norm_weight(dim,dimctx)
+    params[_p(prefix,'W_h1_decatt')] = W_h1_decatt
+
+    W_h2_decatt = norm_weight(dim,dimctx)
+    params[_p(prefix,'W_h2_decatt')] = W_h2_decatt
+
+    
+    b_decatt = numpy.zeros((dimctx,)).astype('float32')
+    params[_p(prefix,'b_decatt')] = b_decatt
+
+    # attention: 
+    U_decatt = norm_weight(dimctx,1)
+    params[_p(prefix,'U_decatt')] = U_decatt
+    c_decatt = numpy.zeros((1,)).astype('float32')
+    params[_p(prefix, 'c_decatt')] = c_decatt
+
+
+    return params
+
 def gru_cond_layer(tparams, state_below, options, prefix='gru', 
                     mask=None, context=None, one_step=False, 
                     init_memory=None, init_state=None, 
@@ -921,7 +996,7 @@ def gru_double_att_layer(tparams, state_below, options, prefix='gru',
     #import ipdb; ipdb.set_trace()
     def _step_slice(m_, x_, xx_, h_, ctx_, alpha_, phist_decatt, hist_decatt, idx_, pctx_, cc_,
                     U, Wc, W_comb_att, U_att, c_tt, Ux, Wcx, U_nl, Ux_nl, b_nl, bx_nl, 
-                    W_currentState_decatt, W_ctx_decatt, Wh, W_h1_decatt, W_h2_decatt, b_decatt):
+                    W_currentState_decatt, W_ctx_decatt, Wh, Whx, W_h1_decatt, W_h2_decatt, b_decatt, U_decatt, c_decatt):
         preact1 = tensor.dot(h_, U)
         preact1 += x_
         preact1 = tensor.nnet.sigmoid(preact1)
@@ -982,6 +1057,7 @@ def gru_double_att_layer(tparams, state_below, options, prefix='gru',
         preactx2 = tensor.dot(h1, Ux_nl)+bx_nl
         preactx2 *= r2
         preactx2 += tensor.dot(ctx_, Wcx)
+        preactx2 += tensor.dot(ctx_decatt, Whx)
 
         h2 = tensor.tanh(preactx2)
 
@@ -1017,9 +1093,12 @@ def gru_double_att_layer(tparams, state_below, options, prefix='gru',
                    tparams[_p(prefix, 'W_currentState_decatt')],
                    tparams[_p(prefix, 'W_ctx_decatt')],
                    tparams[_p(prefix, 'Wh')],
+                   tparams[_p(prefix, 'Whx')],
                    tparams[_p(prefix, 'W_h1_decatt')],
                    tparams[_p(prefix, 'W_h2_decatt')],
-                   tparams[_p(prefix, 'b_decatt')]]
+                   tparams[_p(prefix, 'b_decatt')],
+                   tparams[_p(prefix, 'U_decatt')],
+                   tparams[_p(prefix, 'c_decatt')]]
 
     if one_step:
         rval = _step(*(seqs+[init_state, None, None, pctx_, context]+shared_vars))
