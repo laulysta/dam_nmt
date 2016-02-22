@@ -95,7 +95,7 @@ trainerr, validerr, testerr = train(saveto=modelName,
                                     dim_word=dim_word,
                                     dim=dim_model,
                                     encoder='gru',
-                                    decoder='gru_cond',
+                                    decoder='gru_cond_double',
                                     hiero=None, #'gru_hiero', # or None
                                     max_epochs=100,
                                     n_words_src=n_words_src,
