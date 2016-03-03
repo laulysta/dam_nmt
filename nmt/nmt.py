@@ -983,9 +983,9 @@ def gru_double_att_layer(tparams, state_below, options, prefix='gru',
     if idx == None:
         idx = 1
     if hist_decatt == None:
-        hist_decatt = tensor.alloc(0., nsteps+1, n_samples, dim*2) # history of decoder LSTM hidden layers
+        hist_decatt = tensor.alloc(0., nsteps+1, n_samples, dim*2)  # history of decoder LSTM hidden layers
     if phist_decatt == None:
-        phist_decatt = tensor.alloc(0., nsteps+1, n_samples, dim*2) # projections of decoder LSTM hidden layers
+        phist_decatt = tensor.alloc(0., nsteps+1, n_samples, dim*2)  # projections of decoder LSTM hidden layers
 
     # projected context
     assert context.ndim == 3, 'Context must be 3-d: #annotation x #sample x dim'
@@ -1050,7 +1050,6 @@ def gru_double_att_layer(tparams, state_below, options, prefix='gru',
         alpha_decatt = alpha_decatt * new_mask
         alpha_decatt = alpha_decatt / alpha_decatt.sum(0, keepdims=True)
         ctx_decatt = (hist_decatt[:idx_] * alpha_decatt[:,:,None]).sum(0)
-
         ###############################################
 
         preact2 = tensor.dot(h1, U_nl)+b_nl
@@ -1080,6 +1079,7 @@ def gru_double_att_layer(tparams, state_below, options, prefix='gru',
         new_phist_decatt = tensor.set_subtensor(phist_decatt[idx_], pdec_hiddens)
         new_hist_decatt = tensor.set_subtensor(hist_decatt[idx_], tensor.concatenate([h1,h2], axis=1))
         new_idx = idx_ + 1
+        ###############################################
 
         return h2, ctx_, alpha.T, new_idx, new_hist_decatt, new_phist_decatt #, pstate_, preact, preactx, r, u
 
@@ -1620,6 +1620,7 @@ def build_sampler(tparams, options, trng):
     embr = tparams['Wemb'][xr.flatten()].reshape([n_timesteps, n_samples, options['dim_word']])
 
 
+    print 'Building f_init...',
     # encoder
     proj = get_layer(options['encoder'])[1](tparams, emb, options, prefix='encoder')
     if options['decoder'].endswith('simple'):
@@ -1638,16 +1639,29 @@ def build_sampler(tparams, options, trng):
     if options['encoder'] == 'lstm':
         init_memory = get_layer('ff')[1](tparams, ctx_mean, options, prefix='ff_memory', activ='tanh')
 
-    print 'Building f_init...',
     outs = [init_state, ctx]
     if options['decoder'].startswith('lstm'):
         outs += [init_memory]
 
+    #####################################
+    if options['decoder'] == "gru_cond_double":
+        idx = 1
+        hist_decatt = tensor.alloc(0., options['maxlen']+1, n_samples, options['dim']*2)  # history of decoder LSTM
+        phist_decatt = tensor.alloc(0., options['maxlen']+1, n_samples, options['dim']*2)  # projections of decoder LSTM
+        outs += [idx, hist_decatt, phist_decatt]
+    #####################################
+
     f_init = theano.function([x], outs, name='f_init', profile=profile)
     print 'Done'
 
+    print 'Building f_next..',
     # x: 1 x 1
     y = tensor.vector('y_sampler', dtype='int64')
+    n_timesteps = ctx.shape[0]
+
+    # if it's the first word, emb should be all zero
+    emb = tensor.switch(y[:,None] < 0, tensor.alloc(0., 1, tparams['Wemb_dec'].shape[1]),
+                        tparams['Wemb_dec'][y])
 
     init_state = tensor.matrix('init_state', dtype='float32')
     init_state.tag.test_value = np.zeros((2, 20), dtype="float32")
@@ -1657,20 +1671,32 @@ def build_sampler(tparams, options, trng):
     else:
         init_memory = None
 
-    n_timesteps = ctx.shape[0]
+    if options['decoder'] == "gru_cond_double":
+        idx = tensor.scalar('idx', dtype='int64')
+        idx.tag.test_value = 1
+        hist_decatt = tensor.tensor3('hist_decatt', dtype='float32')
+        hist_decatt.tag.test_value = np.zeros((50+1, 1, options['dim']*2), dtype="float32")
+        phist_decatt = tensor.tensor3('phist_decatt', dtype='float32')
+        phist_decatt.tag.test_value = np.zeros((50+1, 1, options['dim']*2), dtype="float32")
 
-    # if it's the first word, emb should be all zero
-    emb = tensor.switch(y[:,None] < 0, tensor.alloc(0., 1, tparams['Wemb_dec'].shape[1]),
-                        tparams['Wemb_dec'][y])
+        proj = get_layer(options['decoder'])[1](tparams, emb, options,
+                                                prefix='decoder',
+                                                mask=None, context=ctx,
+                                                one_step=True,
+                                                init_state=init_state,
+                                                init_memory=init_memory,
+                                                idx=idx,
+                                                hist_decatt=hist_decatt,
+                                                phist_decatt=phist_decatt)
 
+    else:
+        proj = get_layer(options['decoder'])[1](tparams, emb, options,
+                                                prefix='decoder',
+                                                mask=None, context=ctx,
+                                                one_step=True,
+                                                init_state=init_state,
+                                                init_memory=init_memory)
 
-
-    proj = get_layer(options['decoder'])[1](tparams, emb, options,
-                                            prefix='decoder',
-                                            mask=None, context=ctx,
-                                            one_step=True,
-                                            init_state=init_state,
-                                            init_memory=init_memory)
     if options['decoder'].endswith('simple'):
         next_state = proj
         ctxs = ctx
@@ -1692,12 +1718,17 @@ def build_sampler(tparams, options, trng):
     next_sample = trng.multinomial(pvals=next_probs).argmax(1)
 
     # next word probability
-    print 'Building f_next..',
     inps = [y, ctx, init_state]
     outs = [next_probs, next_sample, next_state]
     if options['decoder'].startswith('lstm'):
         inps += [init_memory]
         outs += [next_memory]
+    if options['decoder'] == "gru_cond_double":
+        next_idx = proj[3]
+        next_hist_decatt = proj[4]
+        next_phist_decatt = proj[5]
+        inps += [idx, hist_decatt, phist_decatt]
+        outs += [next_idx, next_hist_decatt, next_phist_decatt]
 
     f_next = theano.function(inps, outs, name='f_next', profile=profile)
     print 'Done'
@@ -1730,6 +1761,11 @@ def gen_sample(tparams, f_init, f_next, x, options, trng=None, k=1, maxlen=30,
     if options['decoder'].startswith('lstm'):
         next_memory = ret.pop(0)
 
+    if options['decoder'] == "gru_cond_double":
+        next_idx = ret.pop(0)
+        next_hist_decatt = ret.pop(0)
+        next_phist_decatt = ret.pop(0)
+
     next_w = -1 * numpy.ones((1,)).astype('int64')
 
     for ii in xrange(maxlen):
@@ -1742,12 +1778,20 @@ def gen_sample(tparams, f_init, f_next, x, options, trng=None, k=1, maxlen=30,
         if options['decoder'].startswith('lstm'):
             inps += [next_memory]
 
+        if options['decoder'] == "gru_cond_double":
+            inps += [next_idx, next_hist_decatt, next_phist_decatt]
+
         ret = f_next(*inps)
         next_p = ret.pop(0)
         next_w = ret.pop(0)
         next_state = ret.pop(0)
         if options['decoder'].startswith('lstm'):
             next_memory = ret.pop(0)
+
+        if options['decoder'] == "gru_cond_double":
+            next_idx = ret.pop(0)
+            next_hist_decatt = ret.pop(0)
+            next_phist_decatt = ret.pop(0)
 
         if stochastic:
             if argmax:
@@ -2024,7 +2068,7 @@ def train(dim_word=100, # word vector dimensionality
 
     #theano.printing.debugprint(cost.mean(), file=open('cost.txt', 'w'))
 
-    print 'Buliding sampler'
+    print 'Building sampler'
     f_init, f_next = build_sampler(tparams, model_options, trng)
 
     # before any regularizer
