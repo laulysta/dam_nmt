@@ -1610,7 +1610,7 @@ def build_model(tparams, options):
 # build a sampler
 def build_sampler(tparams, options, trng):
     x = tensor.matrix('x', dtype='int64')
-    x.tag.test_value = np.zeros((50, 2), dtype="int64")
+    x.tag.test_value = np.zeros((50, 1), dtype="int64")
     xr = x[::-1]
     n_timesteps = x.shape[0]
     n_samples = x.shape[1]
@@ -1645,7 +1645,7 @@ def build_sampler(tparams, options, trng):
 
     #####################################
     if options['decoder'] == "gru_cond_double":
-        idx = 1
+        idx = theano.shared(np.array(1, dtype="int64"))
         hist_decatt = tensor.alloc(0., options['maxlen']+1, n_samples, options['dim']*2)  # history of decoder LSTM
         phist_decatt = tensor.alloc(0., options['maxlen']+1, n_samples, options['dim']*2)  # projections of decoder LSTM
         outs += [idx, hist_decatt, phist_decatt]
@@ -1657,6 +1657,7 @@ def build_sampler(tparams, options, trng):
     print 'Building f_next..',
     # x: 1 x 1
     y = tensor.vector('y_sampler', dtype='int64')
+    y.tag.test_value = np.array([1])
     n_timesteps = ctx.shape[0]
 
     # if it's the first word, emb should be all zero
@@ -1664,7 +1665,7 @@ def build_sampler(tparams, options, trng):
                         tparams['Wemb_dec'][y])
 
     init_state = tensor.matrix('init_state', dtype='float32')
-    init_state.tag.test_value = np.zeros((2, 20), dtype="float32")
+    init_state.tag.test_value = np.zeros((1, 20), dtype="float32")
     if options['decoder'].startswith('lstm'):
         init_memory = tensor.matrix('init_memory', dtype='float32')
         #init_memory.tag.test_value = np.zeros((2, 20), dtype="float32")
@@ -1741,6 +1742,9 @@ def gen_sample(tparams, f_init, f_next, x, options, trng=None, k=1, maxlen=30,
     if k > 1:
         assert not stochastic, 'Beam search does not support stochastic sampling'
 
+    from ipdb import set_trace as dbg
+    dbg()
+
     sample = []
     sample_score = []
     if stochastic:
@@ -1803,18 +1807,21 @@ def gen_sample(tparams, f_init, f_next, x, options, trng=None, k=1, maxlen=30,
             if nw == 0:
                 break
         else:
+            # Get top K words [given hypothesis samples]
             cand_scores = hyp_scores[:,None] - numpy.log(next_p)
             cand_flat = cand_scores.flatten()
             ranks_flat = cand_flat.argsort()[:(k-dead_k)]
 
             voc_size = next_p.shape[1]
-            trans_indices = ranks_flat / voc_size
-            word_indices = ranks_flat % voc_size
+            trans_indices = ranks_flat / voc_size  # Because of the flatten
+            word_indices = ranks_flat % voc_size   # Because of the flatten
             costs = cand_flat[ranks_flat]
 
             new_hyp_samples = []
             new_hyp_scores = numpy.zeros(k-dead_k).astype('float32')
             new_hyp_states = []
+            new_hyp_hist_decatt = []
+            new_hyp_phist_decatt = []
             if options['decoder'].startswith('lstm'):
                 new_hyp_memories = []
 
@@ -1825,11 +1832,17 @@ def gen_sample(tparams, f_init, f_next, x, options, trng=None, k=1, maxlen=30,
                 if options['decoder'].startswith('lstm'):
                     new_hyp_memories.append(copy.copy(next_memory[ti]))
 
+                if options['decoder'] == "gru_cond_double":
+                    new_hyp_hist_decatt.append(copy.copy(next_hist_decatt[:, [ti], :]))
+                    new_hyp_phist_decatt.append(copy.copy(next_phist_decatt[:, [ti], :]))
+
             # check the finished samples
             new_live_k = 0
             hyp_samples = []
             hyp_scores = []
             hyp_states = []
+            hyp_hist_decatt = []
+            hyp_phist_decatt = []
             if options['decoder'].startswith('lstm'):
                 hyp_memories = []
 
@@ -1846,6 +1859,10 @@ def gen_sample(tparams, f_init, f_next, x, options, trng=None, k=1, maxlen=30,
                     hyp_states.append(new_hyp_states[idx])
                     if options['decoder'].startswith('lstm'):
                         hyp_memories.append(new_hyp_memories[idx])
+                    if options['decoder'] == "gru_cond_double":
+                        hyp_hist_decatt.append(new_hyp_hist_decatt[idx])
+                        hyp_phist_decatt.append(new_hyp_phist_decatt[idx])
+
             hyp_scores = numpy.array(hyp_scores)
             live_k = new_live_k
 
@@ -1858,6 +1875,9 @@ def gen_sample(tparams, f_init, f_next, x, options, trng=None, k=1, maxlen=30,
             next_state = numpy.array(hyp_states)
             if options['decoder'].startswith('lstm'):
                 next_memory = numpy.array(hyp_memories)
+            if options['decoder'] == "gru_cond_double":
+                next_hist_decatt = numpy.concatenate(hyp_hist_decatt, axis=1)
+                next_phist_decatt = numpy.concatenate(hyp_phist_decatt, axis=1)
 
     if not stochastic:
         # dump every remaining one

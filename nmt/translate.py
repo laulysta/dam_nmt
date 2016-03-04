@@ -28,7 +28,7 @@ def translate_model(queue, rqueue, pid, model, options, k, normalize):
 
     def _translate(seq):
         sample, score = gen_sample(tparams, f_init, f_next, numpy.array(seq).reshape([len(seq),1]), options,
-                                   trng=trng, k=k, maxlen=200, stochastic=False)
+                                   trng=trng, k=k, maxlen=20, stochastic=False)
         if normalize:
             lengths = numpy.array([len(s) for s in sample])
             score = score / lengths
@@ -46,7 +46,7 @@ def translate_model(queue, rqueue, pid, model, options, k, normalize):
 
         rqueue.put((idx, seq))
 
-    return 
+    return
 
 def main(model, dictionary, dictionary_target, source_file, saveto, k=5, normalize=False, n_process=5, chr_level=False):
 
@@ -73,7 +73,7 @@ def main(model, dictionary, dictionary_target, source_file, saveto, k=5, normali
     rqueue = Queue()
     processes = [None] * n_process
     for midx in xrange(n_process):
-        processes[midx] = Process(target=translate_model, 
+        processes[midx] = Process(target=translate_model,
                                   args=(queue,rqueue,midx,model,options,k,normalize,))
         processes[midx].start()
 
