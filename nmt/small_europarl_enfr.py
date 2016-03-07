@@ -7,7 +7,7 @@ __authors__ = ("Razvan Pascanu "
                "KyungHyun Cho ")
 __contact__ = "Razvan Pascanu <r.pascanu@gmail>"
 
-import numpy 
+import numpy
 
 import os, gc
 
@@ -66,16 +66,16 @@ def prepare_data(seqs_x, seqs_y, maxlen=None, n_words_src=30000, n_words=30000):
     return x, x_mask, y, y_mask
 
 def load_data(batch_size=128):
-    ''' 
+    '''
     Loads the dataset
     '''
 
-    train_path_src = '../../data/vocab_and_data_small_europarl_v7_enfr/bin_train.en.h5'
-    train_path_trg = '../../data/vocab_and_data_small_europarl_v7_enfr/bin_train.fr.h5'
-    valid_path_src = '../../data/vocab_and_data_small_europarl_v7_enfr/bin_valid.en.h5'
-    valid_path_trg = '../../data/vocab_and_data_small_europarl_v7_enfr/bin_valid.fr.h5'
-    test_path_src = '../../data/vocab_and_data_small_europarl_v7_enfr/bin_test.en.h5'
-    test_path_trg = '../../data/vocab_and_data_small_europarl_v7_enfr/bin_test.fr.h5'
+    train_path_src = '../data/vocab_and_data_small_europarl_v7_enfr/bin_train.en.h5'
+    train_path_trg = '../data/vocab_and_data_small_europarl_v7_enfr/bin_train.fr.h5'
+    valid_path_src = '../data/vocab_and_data_small_europarl_v7_enfr/bin_valid.en.h5'
+    valid_path_trg = '../data/vocab_and_data_small_europarl_v7_enfr/bin_valid.fr.h5'
+    test_path_src = '../data/vocab_and_data_small_europarl_v7_enfr/bin_test.en.h5'
+    test_path_trg = '../data/vocab_and_data_small_europarl_v7_enfr/bin_test.fr.h5'
 
     #############
     # LOAD DATA #

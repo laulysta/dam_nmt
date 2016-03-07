@@ -954,7 +954,7 @@ def gru_cond_layer(tparams, state_below, options, prefix='gru',
 
 
 def gru_double_att_layer(tparams, state_below, options, prefix='gru',
-                         mask=None, context=None, one_step=False,
+                         target_mask=None, context=None, one_step=False,
                          init_memory=None, init_state=None,
                          context_mask=None,
                          idx=None, hist_decatt=None, phist_decatt=None,
@@ -972,8 +972,10 @@ def gru_double_att_layer(tparams, state_below, options, prefix='gru',
         n_samples = 1
 
     # mask
-    if mask == None:
+    if target_mask == None:
         mask = tensor.alloc(1., state_below.shape[0], 1)
+    else:
+        mask = target_mask
 
     dim = tparams[_p(prefix, 'Wcx')].shape[1]
 
@@ -1046,8 +1048,11 @@ def gru_double_att_layer(tparams, state_below, options, prefix='gru',
         alpha_decatt = alpha_decatt.reshape([alpha_decatt.shape[0], alpha_decatt.shape[1]])
         # # TODO: replace with numerically stable theano softmax
         alpha_decatt = tensor.exp(alpha_decatt)
-        new_mask = mask[:idx_]
-        alpha_decatt = alpha_decatt * new_mask
+
+        if target_mask:  # That means we are in training mode
+            # We use the target mask since we are interested in the history of the target.
+            alpha_decatt = alpha_decatt * target_mask[:idx_]
+
         alpha_decatt = alpha_decatt / alpha_decatt.sum(0, keepdims=True)
         ctx_decatt = (hist_decatt[:idx_] * alpha_decatt[:,:,None]).sum(0)
         ###############################################
@@ -1654,10 +1659,16 @@ def build_sampler(tparams, options, trng):
     f_init = theano.function([x], outs, name='f_init', profile=profile)
     print 'Done'
 
+    # TMP
+    import pickle
+    test_value = pickle.load(open('test_value.pkl'))
+    ctx.tag.test_value = test_value[1]
+
     print 'Building f_next..',
     # x: 1 x 1
     y = tensor.vector('y_sampler', dtype='int64')
-    y.tag.test_value = np.array([1])
+    # y.tag.test_value = np.array([1])
+    y.tag.test_value = test_value[0]
     n_timesteps = ctx.shape[0]
 
     # if it's the first word, emb should be all zero
@@ -1665,7 +1676,8 @@ def build_sampler(tparams, options, trng):
                         tparams['Wemb_dec'][y])
 
     init_state = tensor.matrix('init_state', dtype='float32')
-    init_state.tag.test_value = np.zeros((1, 20), dtype="float32")
+    # init_state.tag.test_value = np.zeros((1, 20), dtype="float32")
+    init_state.tag.test_value = test_value[2]
     if options['decoder'].startswith('lstm'):
         init_memory = tensor.matrix('init_memory', dtype='float32')
         #init_memory.tag.test_value = np.zeros((2, 20), dtype="float32")
@@ -1674,11 +1686,14 @@ def build_sampler(tparams, options, trng):
 
     if options['decoder'] == "gru_cond_double":
         idx = tensor.scalar('idx', dtype='int64')
-        idx.tag.test_value = 1
+        # idx.tag.test_value = 1
+        idx.tag.test_value = test_value[3]
         hist_decatt = tensor.tensor3('hist_decatt', dtype='float32')
-        hist_decatt.tag.test_value = np.zeros((50+1, 1, options['dim']*2), dtype="float32")
+        # hist_decatt.tag.test_value = np.zeros((50+1, 1, options['dim']*2), dtype="float32")
+        hist_decatt.tag.test_value = test_value[4]
         phist_decatt = tensor.tensor3('phist_decatt', dtype='float32')
-        phist_decatt.tag.test_value = np.zeros((50+1, 1, options['dim']*2), dtype="float32")
+        # phist_decatt.tag.test_value = np.zeros((50+1, 1, options['dim']*2), dtype="float32")
+        phist_decatt.tag.test_value = test_value[5]
 
         proj = get_layer(options['decoder'])[1](tparams, emb, options,
                                                 prefix='decoder',
@@ -1741,9 +1756,6 @@ def gen_sample(tparams, f_init, f_next, x, options, trng=None, k=1, maxlen=30,
                minlen=-1, stochastic=True, argmax=False):
     if k > 1:
         assert not stochastic, 'Beam search does not support stochastic sampling'
-
-    from ipdb import set_trace as dbg
-    dbg()
 
     sample = []
     sample_score = []
