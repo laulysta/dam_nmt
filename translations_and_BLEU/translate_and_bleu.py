@@ -24,7 +24,7 @@ def createDir(dirPath):
 
 def compute_translation_and_bleu(model_path, vocab_src_path, vocab_trg_path, txt_src_path, txt_trg_path, txt_trans_result_path):
     
-    translateFilePath = '../dam_nmt/nmt/translate.py'
+    translateFilePath = '../nmt/translate.py'
 
     #check_output('python ' + translateFilePath + ' -r 0.5 -n ' + model_path + ' ' + vocab_src_path + ' ' + vocab_trg_path + ' ' + txt_src_path + ' ' + txt_trans_result_path, shell=True)
     check_output('python ' + translateFilePath + ' -n ' + model_path + ' ' + vocab_src_path + ' ' + vocab_trg_path + ' ' + txt_src_path + ' ' + txt_trans_result_path, shell=True)
