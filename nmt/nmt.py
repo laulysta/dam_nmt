@@ -817,7 +817,7 @@ def param_init_gru_cond_double(options, params, prefix='gru_cond_double', nin=No
     W_currentState_decatt = norm_weight(dim,dimctx)
     params[_p(prefix,'W_currentState_decatt')] = W_currentState_decatt
 
-    W_ctx_decatt = norm_weight(dimctx)
+    W_ctx_decatt = norm_weight(dim,dimctx)
     params[_p(prefix,'W_ctx_decatt')] = W_ctx_decatt
 
     W_h1_decatt = norm_weight(dim,dimctx)
@@ -1685,8 +1685,8 @@ def build_sampler(tparams, options, trng):
     #####################################
     if options['decoder'] == "gru_cond_double":
         idx = theano.shared(np.array(1, dtype="int64"))
-        hist_decatt = tensor.alloc(0., options['maxlen']+1, n_samples, options['dim']*2)  # history of decoder LSTM
-        phist_decatt = tensor.alloc(0., options['maxlen']+1, n_samples, options['dim']*2)  # projections of decoder LSTM
+        hist_decatt = tensor.alloc(0., options['maxlen']+1, n_samples, options['dim'])  # history of decoder LSTM
+        phist_decatt = tensor.alloc(0., options['maxlen']+1, n_samples, options['dim'])  # projections of decoder LSTM
         outs += [idx, hist_decatt, phist_decatt]
     #####################################
 
