@@ -1112,7 +1112,7 @@ def gru_double_att_layer(tparams, state_below, options, prefix='gru',
 
         new_phist_decatt = tensor.set_subtensor(phist_decatt[idx_], pdec_hiddens)
         #new_hist_decatt = tensor.set_subtensor(hist_decatt[idx_], tensor.concatenate([h1,h2], axis=1))
-        new_hist_decatt = tensor.set_subtensor(hist_decatt[idx_], h1, axis=1))
+        new_hist_decatt = tensor.set_subtensor(hist_decatt[idx_], h1)
         new_idx = idx_ + 1
         ###############################################
 
