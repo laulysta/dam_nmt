@@ -1096,7 +1096,7 @@ def gru_double_att_layer(tparams, state_below, options, prefix='gru',
         r3 = _slice(preact3, 0, dim)
         u3 = _slice(preact3, 1, dim)
 
-        preactx3 = tensor.dot(h3, Ux_n2)+bx_nl2
+        preactx3 = tensor.dot(h2, Ux_n2)+bx_nl2
         preactx3 *= r3
         preactx3 += tensor.dot(ctx_decatt, Whx)
 
@@ -1116,7 +1116,7 @@ def gru_double_att_layer(tparams, state_below, options, prefix='gru',
         new_idx = idx_ + 1
         ###############################################
 
-        return h2, ctx_, alpha.T, new_idx, new_hist_decatt, new_phist_decatt #, pstate_, preact, preactx, r, u
+        return h3, ctx_, alpha.T, new_idx, new_hist_decatt, new_phist_decatt #, pstate_, preact, preactx, r, u
 
     seqs = [mask, state_below_, state_belowx]
     #seqs = [mask, state_below_, state_belowx, state_belowc]
