@@ -1693,16 +1693,10 @@ def build_sampler(tparams, options, trng):
     f_init = theano.function([x], outs, name='f_init', profile=profile)
     print 'Done'
 
-    # TMP
-    import pickle
-    test_value = pickle.load(open('test_value.pkl'))
-    ctx.tag.test_value = test_value[1]
-
     print 'Building f_next..',
     # x: 1 x 1
     y = tensor.vector('y_sampler', dtype='int64')
-    # y.tag.test_value = np.array([1])
-    y.tag.test_value = test_value[0]
+    y.tag.test_value = np.array([1])
     n_timesteps = ctx.shape[0]
 
     # if it's the first word, emb should be all zero
@@ -1710,8 +1704,7 @@ def build_sampler(tparams, options, trng):
                         tparams['Wemb_dec'][y])
 
     init_state = tensor.matrix('init_state', dtype='float32')
-    # init_state.tag.test_value = np.zeros((1, 20), dtype="float32")
-    init_state.tag.test_value = test_value[2]
+    init_state.tag.test_value = np.zeros((1, 20), dtype="float32")
     if options['decoder'].startswith('lstm'):
         init_memory = tensor.matrix('init_memory', dtype='float32')
         #init_memory.tag.test_value = np.zeros((2, 20), dtype="float32")
@@ -1720,14 +1713,11 @@ def build_sampler(tparams, options, trng):
 
     if options['decoder'] == "gru_cond_double":
         idx = tensor.scalar('idx', dtype='int64')
-        # idx.tag.test_value = 1
-        idx.tag.test_value = test_value[3]
+        idx.tag.test_value = 1
         hist_decatt = tensor.tensor3('hist_decatt', dtype='float32')
-        # hist_decatt.tag.test_value = np.zeros((50+1, 1, options['dim']*2), dtype="float32")
-        hist_decatt.tag.test_value = test_value[4]
+        hist_decatt.tag.test_value = np.zeros((50+1, 1, options['dim']*2), dtype="float32")
         phist_decatt = tensor.tensor3('phist_decatt', dtype='float32')
-        # phist_decatt.tag.test_value = np.zeros((50+1, 1, options['dim']*2), dtype="float32")
-        phist_decatt.tag.test_value = test_value[5]
+        phist_decatt.tag.test_value = np.zeros((50+1, 1, options['dim']*2), dtype="float32")
 
         proj = get_layer(options['decoder'])[1](tparams, emb, options,
                                                 prefix='decoder',
