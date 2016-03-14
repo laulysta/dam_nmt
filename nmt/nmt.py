@@ -997,9 +997,9 @@ def gru_double_att_layer(tparams, state_below, options, prefix='gru',
     if idx == None:
         idx = 1
     if hist_decatt == None:
-        hist_decatt = tensor.alloc(0., nsteps+1, n_samples, dim*2)  # history of decoder LSTM hidden layers
+        hist_decatt = tensor.alloc(0., nsteps+1, n_samples, dim)  # history of decoder LSTM hidden layers
     if phist_decatt == None:
-        phist_decatt = tensor.alloc(0., nsteps+1, n_samples, dim*2)  # projections of decoder LSTM hidden layers
+        phist_decatt = tensor.alloc(0., nsteps+1, n_samples, dim)  # projections of decoder LSTM hidden layers
 
     # projected context
     assert context.ndim == 3, 'Context must be 3-d: #annotation x #sample x dim'
@@ -1715,9 +1715,9 @@ def build_sampler(tparams, options, trng):
         idx = tensor.scalar('idx', dtype='int64')
         idx.tag.test_value = 1
         hist_decatt = tensor.tensor3('hist_decatt', dtype='float32')
-        hist_decatt.tag.test_value = np.zeros((50+1, 1, options['dim']*2), dtype="float32")
+        hist_decatt.tag.test_value = np.zeros((50+1, 1, options['dim']), dtype="float32")
         phist_decatt = tensor.tensor3('phist_decatt', dtype='float32')
-        phist_decatt.tag.test_value = np.zeros((50+1, 1, options['dim']*2), dtype="float32")
+        phist_decatt.tag.test_value = np.zeros((50+1, 1, options['dim']), dtype="float32")
 
         proj = get_layer(options['decoder'])[1](tparams, emb, options,
                                                 prefix='decoder',
