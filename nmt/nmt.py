@@ -817,7 +817,7 @@ def param_init_gru_cond_double(options, params, prefix='gru_cond_double', nin=No
     W_currentState_decatt = norm_weight(dim,dimctx)
     params[_p(prefix,'W_currentState_decatt')] = W_currentState_decatt
 
-    W_ctx_decatt = norm_weight(dim,dimctx)
+    W_ctx_decatt = norm_weight(dimctx)
     params[_p(prefix,'W_ctx_decatt')] = W_ctx_decatt
 
     W_h1_decatt = norm_weight(dim,dimctx)
