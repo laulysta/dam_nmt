@@ -785,7 +785,7 @@ def param_init_gru_cond_double(options, params, prefix='gru_cond_double', nin=No
     Wh = norm_weight(dim,dim*2)
     params[_p(prefix,'Wh')] = Wh
 
-    Whx = norm_weight(dim,dim)
+    Whx = norm_weight(dim)
     params[_p(prefix,'Whx')] = Whx
 
 
@@ -999,7 +999,7 @@ def gru_double_att_layer(tparams, state_below, options, prefix='gru',
     if hist_decatt == None:
         hist_decatt = tensor.alloc(0., nsteps+1, n_samples, dim)  # history of decoder LSTM hidden layers
     if phist_decatt == None:
-        phist_decatt = tensor.alloc(0., nsteps+1, n_samples, dim)  # projections of decoder LSTM hidden layers
+        phist_decatt = tensor.alloc(0., nsteps+1, n_samples, dim*2)  # projections of decoder LSTM hidden layers
 
     # projected context
     assert context.ndim == 3, 'Context must be 3-d: #annotation x #sample x dim'
@@ -1686,7 +1686,7 @@ def build_sampler(tparams, options, trng):
     if options['decoder'] == "gru_cond_double":
         idx = theano.shared(np.array(1, dtype="int64"))
         hist_decatt = tensor.alloc(0., options['maxlen']+1, n_samples, options['dim'])  # history of decoder LSTM
-        phist_decatt = tensor.alloc(0., options['maxlen']+1, n_samples, options['dim'])  # projections of decoder LSTM
+        phist_decatt = tensor.alloc(0., options['maxlen']+1, n_samples, options['dim']*2)  # projections of decoder LSTM
         outs += [idx, hist_decatt, phist_decatt]
     #####################################
 
@@ -1717,7 +1717,7 @@ def build_sampler(tparams, options, trng):
         hist_decatt = tensor.tensor3('hist_decatt', dtype='float32')
         hist_decatt.tag.test_value = np.zeros((50+1, 1, options['dim']), dtype="float32")
         phist_decatt = tensor.tensor3('phist_decatt', dtype='float32')
-        phist_decatt.tag.test_value = np.zeros((50+1, 1, options['dim']), dtype="float32")
+        phist_decatt.tag.test_value = np.zeros((50+1, 1, options['dim']*2), dtype="float32")
 
         proj = get_layer(options['decoder'])[1](tparams, emb, options,
                                                 prefix='decoder',
