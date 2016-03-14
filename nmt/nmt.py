@@ -551,6 +551,17 @@ def param_init_gru_nonlin(options, params, prefix='gru', nin=None, dim=None, hie
     params[_p(prefix,'Ux_nl')] = Ux_nl
     params[_p(prefix,'bx_nl')] = numpy.zeros((dim,)).astype('float32')
 
+
+
+    U_nl2 = numpy.concatenate([ortho_weight(dim),
+                               ortho_weight(dim)], axis=1)
+    params[_p(prefix,'U_nl2')] = U_nl2
+    params[_p(prefix,'b_nl2')] = numpy.zeros((2 * dim,)).astype('float32')
+
+    Ux_nl2 = ortho_weight(dim)
+    params[_p(prefix,'Ux_nl2')] = Ux_nl2
+    params[_p(prefix,'bx_nl2')] = numpy.zeros((dim,)).astype('float32')
+
     return params
 
 def gru_layer(tparams, state_below, options, prefix='gru', mask=None, **kwargs):
@@ -771,11 +782,12 @@ def param_init_gru_cond_double(options, params, prefix='gru_cond_double', nin=No
     params[_p(prefix,'Wcx')] = Wcx
 
     # Double attention part to the LSTM
-    Wh = norm_weight(dim*2,dim*2)
+    Wh = norm_weight(dim,dim*2)
     params[_p(prefix,'Wh')] = Wh
 
-    Whx = norm_weight(dim*2,dim)
+    Whx = norm_weight(dim,dim)
     params[_p(prefix,'Whx')] = Whx
+
 
 
 
@@ -811,8 +823,8 @@ def param_init_gru_cond_double(options, params, prefix='gru_cond_double', nin=No
     W_h1_decatt = norm_weight(dim,dimctx)
     params[_p(prefix,'W_h1_decatt')] = W_h1_decatt
 
-    W_h2_decatt = norm_weight(dim,dimctx)
-    params[_p(prefix,'W_h2_decatt')] = W_h2_decatt
+    #W_h2_decatt = norm_weight(dim,dimctx)
+    #params[_p(prefix,'W_h2_decatt')] = W_h2_decatt
 
 
     b_decatt = numpy.zeros((dimctx,)).astype('float32')
@@ -1005,8 +1017,8 @@ def gru_double_att_layer(tparams, state_below, options, prefix='gru',
     #import ipdb; ipdb.set_trace()
     def _step_slice(m_, x_, xx_, h_, ctx_, alpha_, idx_, hist_decatt, phist_decatt,
                     pctx_, cc_,
-                    U, Wc, W_comb_att, U_att, c_tt, Ux, Wcx, U_nl, Ux_nl, b_nl, bx_nl,
-                    W_currentState_decatt, W_ctx_decatt, Wh, Whx, W_h1_decatt, W_h2_decatt, b_decatt, U_decatt, c_decatt):
+                    U, Wc, W_comb_att, U_att, c_tt, Ux, Wcx, U_nl, Ux_nl, b_nl, bx_nl, U_nl2, Ux_nl2, b_nl2, bx_nl2,
+                    W_currentState_decatt, W_ctx_decatt, Wh, Whx, W_h1_decatt, b_decatt, U_decatt, c_decatt):
         preact1 = tensor.dot(h_, U)
         preact1 += x_
         preact1 = tensor.nnet.sigmoid(preact1)
@@ -1059,7 +1071,7 @@ def gru_double_att_layer(tparams, state_below, options, prefix='gru',
 
         preact2 = tensor.dot(h1, U_nl)+b_nl
         preact2 += tensor.dot(ctx_, Wc)
-        preact2 += tensor.dot(ctx_decatt, Wh)
+        #preact2 += tensor.dot(ctx_decatt, Wh)
         preact2 = tensor.nnet.sigmoid(preact2)
 
         r2 = _slice(preact2, 0, dim)
@@ -1068,21 +1080,39 @@ def gru_double_att_layer(tparams, state_below, options, prefix='gru',
         preactx2 = tensor.dot(h1, Ux_nl)+bx_nl
         preactx2 *= r2
         preactx2 += tensor.dot(ctx_, Wcx)
-        preactx2 += tensor.dot(ctx_decatt, Whx)
+        #preactx2 += tensor.dot(ctx_decatt, Whx)
 
         h2 = tensor.tanh(preactx2)
 
         h2 = u2 * h1 + (1. - u2) * h2
         h2 = m_[:,None] * h2 + (1. - m_)[:,None] * h1
 
+        ################################################
+
+        preact3 = tensor.dot(h2, U_nl2)+b_nl2
+        preact3 += tensor.dot(ctx_decatt, Wh)
+        preact3 = tensor.nnet.sigmoid(preact3)
+
+        r3 = _slice(preact3, 0, dim)
+        u3 = _slice(preact3, 1, dim)
+
+        preactx3 = tensor.dot(h3, Ux_n2)+bx_nl2
+        preactx3 *= r3
+        preactx3 += tensor.dot(ctx_decatt, Whx)
+
+        h3 = tensor.tanh(preactx3)
+
+        h3 = u3 * h2 + (1. - u3) * h3
+        h3 = m_[:,None] * h3 + (1. - m_)[:,None] * h2
 
         ################################################
         # History and index update
         pdec_hiddens = tensor.dot(h1, W_h1_decatt) + b_decatt
-        pdec_hiddens += tensor.dot(h2, W_h2_decatt)
+        #pdec_hiddens += tensor.dot(h2, W_h2_decatt)
 
         new_phist_decatt = tensor.set_subtensor(phist_decatt[idx_], pdec_hiddens)
-        new_hist_decatt = tensor.set_subtensor(hist_decatt[idx_], tensor.concatenate([h1,h2], axis=1))
+        #new_hist_decatt = tensor.set_subtensor(hist_decatt[idx_], tensor.concatenate([h1,h2], axis=1))
+        new_hist_decatt = tensor.set_subtensor(hist_decatt[idx_], h1, axis=1))
         new_idx = idx_ + 1
         ###############################################
 
@@ -1103,12 +1133,16 @@ def gru_double_att_layer(tparams, state_below, options, prefix='gru',
                    tparams[_p(prefix, 'Ux_nl')],
                    tparams[_p(prefix, 'b_nl')],
                    tparams[_p(prefix, 'bx_nl')],
+                   tparams[_p(prefix, 'U_nl2')],
+                   tparams[_p(prefix, 'Ux_nl2')],
+                   tparams[_p(prefix, 'b_nl2')],
+                   tparams[_p(prefix, 'bx_nl2')],
                    tparams[_p(prefix, 'W_currentState_decatt')],
                    tparams[_p(prefix, 'W_ctx_decatt')],
                    tparams[_p(prefix, 'Wh')],
                    tparams[_p(prefix, 'Whx')],
                    tparams[_p(prefix, 'W_h1_decatt')],
-                   tparams[_p(prefix, 'W_h2_decatt')],
+                   #tparams[_p(prefix, 'W_h2_decatt')],
                    tparams[_p(prefix, 'b_decatt')],
                    tparams[_p(prefix, 'U_decatt')],
                    tparams[_p(prefix, 'c_decatt')]]
