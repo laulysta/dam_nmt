@@ -24,11 +24,13 @@ def translate_model(queue, rqueue, pid, model, options, k, normalize):
     tparams = init_tparams(params)
 
     # word index
+    maxlen = 200
+    options['maxlen'] = maxlen
     f_init, f_next = build_sampler(tparams, options, trng)
 
     def _translate(seq):
         sample, score = gen_sample(tparams, f_init, f_next, numpy.array(seq).reshape([len(seq),1]), options,
-                                   trng=trng, k=k, maxlen=20, stochastic=False)
+                                   trng=trng, k=k, maxlen=maxlen, stochastic=False)
         if normalize:
             lengths = numpy.array([len(s) for s in sample])
             score = score / lengths
