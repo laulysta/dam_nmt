@@ -1070,8 +1070,8 @@ def gru_double_att_layer(tparams, state_below, options, prefix='gru',
         ###############################################
 
         preact2 = tensor.dot(h1, U_nl)+b_nl
-        preact2 += tensor.dot(ctx_, Wc)
-        #preact2 += tensor.dot(ctx_decatt, Wh)
+        #preact2 += tensor.dot(ctx_, Wc)
+        preact2 += tensor.dot(ctx_decatt, Wh)
         preact2 = tensor.nnet.sigmoid(preact2)
 
         r2 = _slice(preact2, 0, dim)
@@ -1079,8 +1079,8 @@ def gru_double_att_layer(tparams, state_below, options, prefix='gru',
 
         preactx2 = tensor.dot(h1, Ux_nl)+bx_nl
         preactx2 *= r2
-        preactx2 += tensor.dot(ctx_, Wcx)
-        #preactx2 += tensor.dot(ctx_decatt, Whx)
+        #preactx2 += tensor.dot(ctx_, Wcx)
+        preactx2 += tensor.dot(ctx_decatt, Whx)
 
         h2 = tensor.tanh(preactx2)
 
@@ -1090,7 +1090,8 @@ def gru_double_att_layer(tparams, state_below, options, prefix='gru',
         ################################################
 
         preact3 = tensor.dot(h2, U_nl2)+b_nl2
-        preact3 += tensor.dot(ctx_decatt, Wh)
+        preact3 += tensor.dot(ctx_, Wc)
+        #preact3 += tensor.dot(ctx_decatt, Wh)
         preact3 = tensor.nnet.sigmoid(preact3)
 
         r3 = _slice(preact3, 0, dim)
@@ -1098,7 +1099,8 @@ def gru_double_att_layer(tparams, state_below, options, prefix='gru',
 
         preactx3 = tensor.dot(h2, Ux_nl2)+bx_nl2
         preactx3 *= r3
-        preactx3 += tensor.dot(ctx_decatt, Whx)
+        preactx3 += tensor.dot(ctx_, Wcx)
+        #preactx3 += tensor.dot(ctx_decatt, Whx)
 
         h3 = tensor.tanh(preactx3)
 
