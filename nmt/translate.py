@@ -24,7 +24,7 @@ def translate_model(queue, rqueue, pid, model, options, k, normalize):
     tparams = init_tparams(params)
 
     # word index
-    maxlen = 200
+    maxlen = 150
     options['maxlen'] = maxlen
     f_init, f_next = build_sampler(tparams, options, trng)
 
