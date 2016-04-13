@@ -795,6 +795,9 @@ def param_init_gru_cond_double(options, params, prefix='gru_cond_double', nin=No
     W_comb_att = norm_weight(dim,dimctx)
     params[_p(prefix,'W_comb_att')] = W_comb_att
 
+    W_ctx_decatt_att = norm_weight(dim,dimctx)
+    params[_p(prefix,'W_ctx_decatt_att')] = W_ctx_decatt_att
+
     # attention: context -> hidden
     Wc_att = norm_weight(dimctx)
     params[_p(prefix,'Wc_att')] = Wc_att
@@ -817,8 +820,8 @@ def param_init_gru_cond_double(options, params, prefix='gru_cond_double', nin=No
     W_currentState_decatt = norm_weight(dim,dimctx)
     params[_p(prefix,'W_currentState_decatt')] = W_currentState_decatt
 
-    W_ctx_decatt = norm_weight(dimctx)
-    params[_p(prefix,'W_ctx_decatt')] = W_ctx_decatt
+    #W_ctx_decatt = norm_weight(dimctx)
+    #params[_p(prefix,'W_ctx_decatt')] = W_ctx_decatt
 
     W_h1_decatt = norm_weight(dim,dimctx)
     params[_p(prefix,'W_h1_decatt')] = W_h1_decatt
@@ -1018,7 +1021,7 @@ def gru_double_att_layer(tparams, state_below, options, prefix='gru',
     def _step_slice(m_, x_, xx_, h_, ctx_, alpha_, idx_, hist_decatt, phist_decatt,
                     pctx_, cc_,
                     U, Wc, W_comb_att, U_att, c_tt, Ux, Wcx, U_nl, Ux_nl, b_nl, bx_nl, U_nl2, Ux_nl2, b_nl2, bx_nl2,
-                    W_currentState_decatt, W_ctx_decatt, Wh, Whx, W_h1_decatt, b_decatt, U_decatt, c_decatt):
+                    W_currentState_decatt, W_ctx_decatt_att, Wh, Whx, W_h1_decatt, b_decatt, U_decatt, c_decatt):
         preact1 = tensor.dot(h_, U)
         preact1 += x_
         preact1 = tensor.nnet.sigmoid(preact1)
@@ -1035,25 +1038,11 @@ def gru_double_att_layer(tparams, state_below, options, prefix='gru',
         h1 = u1 * h_ + (1. - u1) * h1
         h1 = m_[:,None] * h1 + (1. - m_)[:,None] * h_
 
-        # attention
-        pstate_ = tensor.dot(h1, W_comb_att)
-        pctx__ = pctx_ + pstate_[None,:,:]
-        #pctx__ += xc_
-        pctx__ = tensor.tanh(pctx__)
-        alpha = tensor.dot(pctx__, U_att)+c_tt
-        alpha = alpha.reshape([alpha.shape[0], alpha.shape[1]])
-        # TODO: replace with numerically stable theano softmax
-        alpha = tensor.exp(alpha)
-        if context_mask:
-            alpha = alpha * context_mask
-        alpha = alpha / alpha.sum(0, keepdims=True)
-        ctx_ = (cc_ * alpha[:,:,None]).sum(0) # current context
-
 
         ###############################################
         pdecatt = phist_decatt[:idx_]
         pdecatt += tensor.dot(h1, W_currentState_decatt)
-        pdecatt += tensor.dot(ctx_, W_ctx_decatt)
+        #pdecatt += tensor.dot(ctx_, W_ctx_decatt)
 
         pdecatt = tensor.tanh(pdecatt)
         alpha_decatt = tensor.dot(pdecatt, U_decatt)+c_decatt
@@ -1067,6 +1056,24 @@ def gru_double_att_layer(tparams, state_below, options, prefix='gru',
 
         alpha_decatt = alpha_decatt / alpha_decatt.sum(0, keepdims=True)
         ctx_decatt = (hist_decatt[:idx_] * alpha_decatt[:,:,None]).sum(0)
+        ###############################################
+
+        # attention
+        pstate_ = tensor.dot(h1, W_comb_att)
+        pctx__ = pctx_ + pstate_[None, :, :]
+        pctx__ += tensor.dot(ctx_decatt, W_ctx_decatt_att)
+
+        # pctx__ += xc_
+        pctx__ = tensor.tanh(pctx__)
+        alpha = tensor.dot(pctx__, U_att) + c_tt
+        alpha = alpha.reshape([alpha.shape[0], alpha.shape[1]])
+        # TODO: replace with numerically stable theano softmax
+        alpha = tensor.exp(alpha)
+        if context_mask:
+            alpha = alpha * context_mask
+        alpha = alpha / alpha.sum(0, keepdims=True)
+        ctx_ = (cc_ * alpha[:, :, None]).sum(0)  # current context
+
         ###############################################
 
         preact2 = tensor.dot(h1, U_nl)+b_nl
@@ -1140,7 +1147,7 @@ def gru_double_att_layer(tparams, state_below, options, prefix='gru',
                    tparams[_p(prefix, 'b_nl2')],
                    tparams[_p(prefix, 'bx_nl2')],
                    tparams[_p(prefix, 'W_currentState_decatt')],
-                   tparams[_p(prefix, 'W_ctx_decatt')],
+                   tparams[_p(prefix, 'W_ctx_decatt_att')],
                    tparams[_p(prefix, 'Wh')],
                    tparams[_p(prefix, 'Whx')],
                    tparams[_p(prefix, 'W_h1_decatt')],
