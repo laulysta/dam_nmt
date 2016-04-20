@@ -28,7 +28,7 @@ batch_size = int(args.batch_size)
 
 #Create names and folders
 ####################################################################################
-dirPath = 'saved_attentional_models_correlation/'
+dirPath = 'saved_attentional_models_euclidean/'
 if not os.path.exists(dirPath):
     try:
         os.makedirs(dirPath)
