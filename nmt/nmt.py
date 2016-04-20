@@ -5,11 +5,8 @@ import theano
 import theano.tensor as tensor
 from theano.sandbox.rng_mrg import MRG_RandomStreams as RandomStreams
 
-from ipdb import set_trace as dbg
-
 import cPickle as pkl
 import numpy
-import numpy as np
 import copy
 
 import os
@@ -21,17 +18,30 @@ from scipy import optimize, stats
 from collections import OrderedDict
 #from sklearn.cross_validation import KFold
 
-
-import sub_europarl
+import wmt14enfr
+import iwslt14zhen
+import openmt15zhen
+import trans_enhi
+import stan
+import europarl
+import de_en
 import small_europarl_enfr
 import wmt_all_enfr
+import wit3_fr_en
 
 profile = False
 
 # datasets: 'name', 'load_data: returns iterator', 'prepare_data: some preprocessing'
-datasets = {'sub_europarl': (sub_europarl.load_data, sub_europarl.prepare_data),
+datasets = {'wmt14enfr': (wmt14enfr.load_data, wmt14enfr.prepare_data),
+            'iwslt14zhen': (iwslt14zhen.load_data, iwslt14zhen.prepare_data),
+            'openmt15zhen': (openmt15zhen.load_data, openmt15zhen.prepare_data),
+            'trans_enhi': (trans_enhi.load_data, trans_enhi.prepare_data),
+            'stan': (stan.load_data, stan.prepare_data),
+            'europarl': (europarl.load_data, europarl.prepare_data),
+            'de_en': (de_en.load_data, de_en.prepare_data),
             'small_europarl_enfr': (small_europarl_enfr.load_data, small_europarl_enfr.prepare_data),
             'wmt_all_enfr': (wmt_all_enfr.load_data, wmt_all_enfr.prepare_data),
+            'wit3_fr_en': (wit3_fr_en.load_data, wit3_fr_en.prepare_data),
             }
 
 def get_dataset(name):
@@ -55,7 +65,7 @@ def itemlist(tparams):
 
 # dropout
 def dropout_layer(state_before, use_noise, trng):
-    proj = tensor.switch(use_noise,
+    proj = tensor.switch(use_noise, 
             state_before * trng.binomial(state_before.shape, p=0.5, n=1, dtype=state_before.dtype),
             state_before * 0.5)
     return proj
@@ -89,7 +99,7 @@ layers = {'ff': ('param_init_fflayer', 'fflayer'),
           'lstm_cond': ('param_init_lstm_cond', 'lstm_cond_layer'),
           'gru': ('param_init_gru', 'gru_layer'),
           'gru_cond': ('param_init_gru_cond', 'gru_cond_layer'),
-          'gru_cond_double': ('param_init_gru_cond_double', 'gru_double_att_layer'),
+          'gru_covVec_cond': ('param_init_gru_cond', 'gru_covVec_cond_layer'),
           'gru_cond_simple': ('param_init_gru_cond_simple', 'gru_cond_simple_layer'),
           'gru_hiero': ('param_init_gru_hiero', 'gru_hiero_layer'),
           'rnn': ('param_init_rnn', 'rnn_layer'),
@@ -236,11 +246,11 @@ def rnn_layer(tparams, state_below, options, prefix='rnn', mask=None, **kwargs):
 
         return h#, r, u, preact, preactx
 
-    rval, updates = theano.scan(_step,
+    rval, updates = theano.scan(_step, 
                                 sequences=[mask, state_belowx],
                                 outputs_info = [tensor.alloc(0., n_samples, dim)],
                                                 #None, None, None, None],
-                                non_sequences=[tparams[_p(prefix, 'Ux')]],
+                                non_sequences=[tparams[_p(prefix, 'Ux')]], 
                                 name=_p(prefix, '_layers'),
                                 n_steps=nsteps,
                                 profile=profile)
@@ -278,7 +288,7 @@ def param_init_rnn_cond(options, params, prefix='rnn_cond', nin=None, dim=None, 
     b_att = numpy.zeros((dimctx,)).astype('float32')
     params[_p(prefix,'b_att')] = b_att
 
-    # attention:
+    # attention: 
     U_att = norm_weight(dimctx,1)
     params[_p(prefix,'U_att')] = U_att
     c_att = numpy.zeros((1,)).astype('float32')
@@ -286,9 +296,9 @@ def param_init_rnn_cond(options, params, prefix='rnn_cond', nin=None, dim=None, 
 
     return params
 
-def rnn_cond_layer(tparams, state_below, options, prefix='rnn',
-                   mask=None, context=None, one_step=False,
-                   init_memory=None, init_state=None,
+def rnn_cond_layer(tparams, state_below, options, prefix='rnn', 
+                   mask=None, context=None, one_step=False, 
+                   init_memory=None, init_state=None, 
                    context_mask=None,
                    **kwargs):
 
@@ -313,7 +323,7 @@ def rnn_cond_layer(tparams, state_below, options, prefix='rnn',
     if init_state == None:
         init_state = tensor.alloc(0., n_samples, dim)
 
-    # projected context
+    # projected context 
     assert context.ndim == 3, 'Context must be 3-d: #annotation x #sample x dim'
     pctx_ = tensor.dot(context, tparams[_p(prefix,'Wc_att')]) + tparams[_p(prefix,'b_att')]
     pctx_ += tparams[_p(prefix,'b_att')]
@@ -332,7 +342,7 @@ def rnn_cond_layer(tparams, state_below, options, prefix='rnn',
               Wd_att, U_att, c_tt, Ux, Wcx):
         # attention
         pstate_ = tensor.dot(h_, Wd_att)
-        pctx__ = pctx_ + pstate_[None,:,:]
+        pctx__ = pctx_ + pstate_[None,:,:] 
         pctx__ += xc_
         pctx__ = tensor.tanh(pctx__)
         alpha = tensor.dot(pctx__, U_att)+c_tt
@@ -354,19 +364,19 @@ def rnn_cond_layer(tparams, state_below, options, prefix='rnn',
         return h, ctx_, alpha.T #, pstate_, preact, preactx, r, u
 
     if one_step:
-        rval = _step(mask, state_belowx, state_belowc, init_state, None, None,
+        rval = _step(mask, state_belowx, state_belowc, init_state, None, None, 
                      pctx_, tparams[_p(prefix,'Wd_att')],
                      tparams[_p(prefix,'U_att')],
                      tparams[_p(prefix, 'c_tt')],
                      tparams[_p(prefix, 'Ux')],
                      tparams[_p(prefix, 'Wcx')] )
     else:
-        rval, updates = theano.scan(_step,
+        rval, updates = theano.scan(_step, 
                                     sequences=[mask, state_belowx, state_belowc],
-                                    outputs_info = [init_state,
+                                    outputs_info = [init_state, 
                                                     tensor.alloc(0., n_samples, context.shape[2]),
                                                     tensor.alloc(0., n_samples, context.shape[0])],
-                                                    #None, None, None,
+                                                    #None, None, None, 
                                                     #None, None],
                                     non_sequences=[pctx_,
                                                    tparams[_p(prefix,'Wd_att')],
@@ -380,7 +390,7 @@ def rnn_cond_layer(tparams, state_below, options, prefix='rnn',
                                     profile=profile)
     return rval
 
-# Hierarchical RNN layer
+# Hierarchical RNN layer 
 def param_init_rnn_hiero(options, params, prefix='rnn_hiero', nin=None, dimctx=None):
     if nin == None:
         nin = options['dim']
@@ -402,7 +412,7 @@ def param_init_rnn_hiero(options, params, prefix='rnn_hiero', nin=None, dimctx=N
     b_att = numpy.zeros((dimctx,)).astype('float32')
     params[_p(prefix,'b_att')] = b_att
 
-    # attention:
+    # attention: 
     U_att = norm_weight(dimctx,1)
     params[_p(prefix,'U_att')] = U_att
     c_att = numpy.zeros((1,)).astype('float32')
@@ -416,7 +426,7 @@ def param_init_rnn_hiero(options, params, prefix='rnn_hiero', nin=None, dimctx=N
 
     return params
 
-def rnn_hiero_layer(tparams, context, options, prefix='rnn_hiero',
+def rnn_hiero_layer(tparams, context, options, prefix='rnn_hiero', 
                     context_mask=None, **kwargs):
 
     nsteps = context.shape[0]
@@ -436,7 +446,7 @@ def rnn_hiero_layer(tparams, context, options, prefix='rnn_hiero',
     # initial/previous state
     init_state = tensor.alloc(0., n_samples, dim)
 
-    # projected context
+    # projected context 
     assert context.ndim == 3, 'Context must be 3-d: #annotation x #sample x dim'
     pctx_ = tensor.dot(context, tparams[_p(prefix,'Wc_att')]) + tparams[_p(prefix,'b_att')]
 
@@ -450,7 +460,7 @@ def rnn_hiero_layer(tparams, context, options, prefix='rnn_hiero',
 
         # attention
         pstate_ = tensor.dot(h_, Wd_att)
-        pctx__ = pctx_ + pstate_[None,:,:]
+        pctx__ = pctx_ + pstate_[None,:,:] 
         pctx__ = tensor.tanh(pctx__)
         alpha = tensor.dot(pctx__, U_att)+c_tt
         alpha = alpha.reshape([alpha.shape[0], alpha.shape[1]])
@@ -474,13 +484,13 @@ def rnn_hiero_layer(tparams, context, options, prefix='rnn_hiero',
 
         return h, ctx_, alpha.T, v_[:,0] #, pstate_, preact, preactx, r, u
 
-    rval, updates = theano.scan(_step,
+    rval, updates = theano.scan(_step, 
                                 sequences=[mask],
-                                outputs_info = [init_state,
+                                outputs_info = [init_state, 
                                                 tensor.alloc(0., n_samples, context.shape[2]),
                                                 tensor.alloc(0., n_samples, context.shape[0]),
                                                 tensor.alloc(1., n_samples)],
-                                                #None, None, None,
+                                                #None, None, None, 
                                                 #None, None],
                                 non_sequences=[pctx_,
                                                tparams[_p(prefix,'Wd_att')],
@@ -541,7 +551,7 @@ def param_init_gru_nonlin(options, params, prefix='gru', nin=None, dim=None, hie
     params[_p(prefix,'Ux')] = Ux
     params[_p(prefix,'bx')] = numpy.zeros((dim,)).astype('float32')
 
-
+    
     U_nl = numpy.concatenate([ortho_weight(dim),
                               ortho_weight(dim)], axis=1)
     params[_p(prefix,'U_nl')] = U_nl
@@ -550,31 +560,29 @@ def param_init_gru_nonlin(options, params, prefix='gru', nin=None, dim=None, hie
     Ux_nl = ortho_weight(dim)
     params[_p(prefix,'Ux_nl')] = Ux_nl
     params[_p(prefix,'bx_nl')] = numpy.zeros((dim,)).astype('float32')
-
-
-
-    U_nl2 = numpy.concatenate([ortho_weight(dim),
-                               ortho_weight(dim)], axis=1)
-    params[_p(prefix,'U_nl2')] = U_nl2
-    params[_p(prefix,'b_nl2')] = numpy.zeros((2 * dim,)).astype('float32')
-
-    Ux_nl2 = ortho_weight(dim)
-    params[_p(prefix,'Ux_nl2')] = Ux_nl2
-    params[_p(prefix,'bx_nl2')] = numpy.zeros((dim,)).astype('float32')
-
+    
     return params
 
-def gru_layer(tparams, state_below, options, prefix='gru', mask=None, **kwargs):
+def gru_layer(tparams, state_below, options, prefix='gru', mask=None, one_step=False, init_state=None, **kwargs):
     nsteps = state_below.shape[0]
     if state_below.ndim == 3:
         n_samples = state_below.shape[1]
     else:
         n_samples = 1
 
+    if one_step:
+        assert init_state, 'previous state must be provided'
+
     dim = tparams[_p(prefix,'Ux')].shape[1]
 
     if mask == None:
         mask = tensor.alloc(1., state_below.shape[0], 1)
+
+
+    # initial/previous state
+    if init_state == None:
+        init_state = tensor.alloc(0., n_samples, dim)
+
 
     def _slice(_x, n, dim):
         if _x.ndim == 3:
@@ -607,12 +615,18 @@ def gru_layer(tparams, state_below, options, prefix='gru', mask=None, **kwargs):
     seqs = [mask, state_below_, state_belowx]
     _step = _step_slice
 
-    rval, updates = theano.scan(_step,
+    shared_vars = [tparams[_p(prefix, 'U')], 
+                   tparams[_p(prefix, 'Ux')]]
+
+
+    if one_step:
+        rval = _step(*(seqs+[init_state]+shared_vars))
+    else:
+        rval, updates = theano.scan(_step, 
                                 sequences=seqs,
                                 outputs_info = [tensor.alloc(0., n_samples, dim)],
                                                 #None, None, None, None],
-                                non_sequences = [tparams[_p(prefix, 'U')],
-                                                 tparams[_p(prefix, 'Ux')]],
+                                non_sequences = shared_vars,
                                 name=_p(prefix, '_layers'),
                                 n_steps=nsteps,
                                 profile=profile,
@@ -622,29 +636,33 @@ def gru_layer(tparams, state_below, options, prefix='gru', mask=None, **kwargs):
 
 # Conditional GRU layer without Attention
 def param_init_gru_cond_simple(options, params, prefix='gru_cond', nin=None, dim=None, dimctx=None):
-    if nin == None:
-        nin = options['dim']
-    if dim == None:
-        dim = options['dim']
-    if dimctx == None:
-        dimctx = options['dim']
+    #     if nin == None:
+    #         nin = options['dim']
+    #     if dim == None:
+    #         dim = options['dim']
+    #     if dimctx == None:
+    #         dimctx = options['dim']
 
 
-    params = param_init_gru(options, params, prefix, nin=nin, dim=dim)
+    #     if options['bow_source_minus_target']:
+    #         coef_in = 2
+    #     else:
+    #         coef_in = 1
+
+    #     params = param_init_gru(options, params, prefix, nin=nin*coef_in, dim=dim)
 
 
-    # context to LSTM
-    Wc = norm_weight(dimctx,dim*2)
-    params[_p(prefix,'Wc')] = Wc
+    #     # context to LSTM
+    #     Wc = norm_weight(dimctx,dim*2)
+    #     params[_p(prefix,'Wc')] = Wc
 
-    Wcx = norm_weight(dimctx,dim)
-    params[_p(prefix,'Wcx')] = Wcx
-
+    #     Wcx = norm_weight(dimctx,dim)
+    #     params[_p(prefix,'Wcx')] = Wcx
     return params
 
-def gru_cond_simple_layer(tparams, state_below, options, prefix='gru',
-                          mask=None, context=None, one_step=False,
-                          init_memory=None, init_state=None,
+def gru_cond_simple_layer(tparams, state_below, options, prefix='gru', 
+                          mask=None, context=None, one_step=False, 
+                          init_memory=None, init_state=None, 
                           context_mask=None,
                           **kwargs):
 
@@ -669,7 +687,7 @@ def gru_cond_simple_layer(tparams, state_below, options, prefix='gru',
     if init_state == None:
         init_state = tensor.alloc(0., n_samples, dim)
 
-    # projected context
+    # projected context 
     assert context.ndim == 2, 'Context must be 2-d: #sample x dim'
     pctx_ = tensor.dot(context, tparams[_p(prefix,'Wc')])
     pctxx_ = tensor.dot(context, tparams[_p(prefix,'Wcx')])
@@ -708,14 +726,14 @@ def gru_cond_simple_layer(tparams, state_below, options, prefix='gru',
     _step = _step_slice
 
     shared_vars = [tparams[_p(prefix, 'U')],
-                   tparams[_p(prefix, 'Ux')]]
+                   tparams[_p(prefix, 'Ux')]] 
 
     if one_step:
         rval = _step(*(seqs+[init_state, pctx_, pctxx_]+shared_vars))
     else:
-        rval, updates = theano.scan(_step,
+        rval, updates = theano.scan(_step, 
                                     sequences=seqs,
-                                    outputs_info=[init_state],
+                                    outputs_info=[init_state], 
                                     non_sequences=[pctx_,
                                                    pctxx_]+shared_vars,
                                     name=_p(prefix, '_layers'),
@@ -741,8 +759,18 @@ def param_init_gru_cond(options, params, prefix='gru_cond', nin=None, dim=None, 
 
     Wcx = norm_weight(dimctx,dim)
     params[_p(prefix,'Wcx')] = Wcx
-
-
+    
+    if options['covVec_in_decoder']:
+        W_covVec_decoder = norm_weight(nin,dim*2)
+        params[_p(prefix,'W_covVec_decoder')] = W_covVec_decoder
+        
+        Wx_covVec_decoder = norm_weight(nin,dim)
+        params[_p(prefix,'Wx_covVec_decoder')] = Wx_covVec_decoder
+    
+    if options['covVec_in_attention']:
+        W_covVec_att = norm_weight(nin,dimctx)
+        params[_p(prefix,'W_covVec_att')] = W_covVec_att
+    
 
     # attention: combined -> hidden
     W_comb_att = norm_weight(dim,dimctx)
@@ -756,7 +784,7 @@ def param_init_gru_cond(options, params, prefix='gru_cond', nin=None, dim=None, 
     b_att = numpy.zeros((dimctx,)).astype('float32')
     params[_p(prefix,'b_att')] = b_att
 
-    # attention:
+    # attention: 
     U_att = norm_weight(dimctx,1)
     params[_p(prefix,'U_att')] = U_att
     c_att = numpy.zeros((1,)).astype('float32')
@@ -764,87 +792,9 @@ def param_init_gru_cond(options, params, prefix='gru_cond', nin=None, dim=None, 
 
     return params
 
-def param_init_gru_cond_double(options, params, prefix='gru_cond_double', nin=None, dim=None, dimctx=None):
-    if nin == None:
-        nin = options['dim']
-    if dim == None:
-        dim = options['dim']
-    if dimctx == None:
-        dimctx = options['dim']
-
-    params = param_init_gru_nonlin(options, params, prefix, nin=nin, dim=dim)
-
-    # context to LSTM
-    Wc = norm_weight(dimctx,dim*2)
-    params[_p(prefix,'Wc')] = Wc
-
-    Wcx = norm_weight(dimctx,dim)
-    params[_p(prefix,'Wcx')] = Wcx
-
-    # Double attention part to the LSTM
-    Wh = norm_weight(dim,dim*2)
-    params[_p(prefix,'Wh')] = Wh
-
-    Whx = norm_weight(dim)
-    params[_p(prefix,'Whx')] = Whx
-
-
-
-
-    # attention: combined -> hidden
-    W_comb_att = norm_weight(dim,dimctx)
-    params[_p(prefix,'W_comb_att')] = W_comb_att
-
-    W_ctx_decatt_att = norm_weight(dim,dimctx)
-    params[_p(prefix,'W_ctx_decatt_att')] = W_ctx_decatt_att
-
-    # attention: context -> hidden
-    Wc_att = norm_weight(dimctx)
-    params[_p(prefix,'Wc_att')] = Wc_att
-
-    # attention: hidden bias
-    b_att = numpy.zeros((dimctx,)).astype('float32')
-    params[_p(prefix,'b_att')] = b_att
-
-    # attention:
-    U_att = norm_weight(dimctx,1)
-    params[_p(prefix,'U_att')] = U_att
-    c_att = numpy.zeros((1,)).astype('float32')
-    params[_p(prefix, 'c_tt')] = c_att
-
-
-
-
-    # Decoder attention part on the history of the LSTM
-
-    W_currentState_decatt = norm_weight(dim,dimctx)
-    params[_p(prefix,'W_currentState_decatt')] = W_currentState_decatt
-
-    #W_ctx_decatt = norm_weight(dimctx)
-    #params[_p(prefix,'W_ctx_decatt')] = W_ctx_decatt
-
-    W_h1_decatt = norm_weight(dim,dimctx)
-    params[_p(prefix,'W_h1_decatt')] = W_h1_decatt
-
-    #W_h2_decatt = norm_weight(dim,dimctx)
-    #params[_p(prefix,'W_h2_decatt')] = W_h2_decatt
-
-
-    b_decatt = numpy.zeros((dimctx,)).astype('float32')
-    params[_p(prefix,'b_decatt')] = b_decatt
-
-    # attention:
-    U_decatt = norm_weight(dimctx,1)
-    params[_p(prefix,'U_decatt')] = U_decatt
-    c_decatt = numpy.zeros((1,)).astype('float32')
-    params[_p(prefix, 'c_decatt')] = c_decatt
-
-
-    return params
-
-def gru_cond_layer(tparams, state_below, options, prefix='gru',
-                    mask=None, context=None, one_step=False,
-                    init_memory=None, init_state=None,
+def gru_cond_layer(tparams, state_below, options, prefix='gru', 
+                    mask=None, context=None, one_step=False, 
+                    init_memory=None, init_state=None, 
                     context_mask=None,
                     **kwargs):
 
@@ -869,10 +819,10 @@ def gru_cond_layer(tparams, state_below, options, prefix='gru',
     if init_state == None:
         init_state = tensor.alloc(0., n_samples, dim)
 
-    # projected context
+    # projected context 
     assert context.ndim == 3, 'Context must be 3-d: #annotation x #sample x dim'
     pctx_ = tensor.dot(context, tparams[_p(prefix,'Wc_att')]) + tparams[_p(prefix,'b_att')]
-
+        
     def _slice(_x, n, dim):
         if _x.ndim == 3:
             return _x[:, :, n*dim:(n+1)*dim]
@@ -900,15 +850,14 @@ def gru_cond_layer(tparams, state_below, options, prefix='gru',
 
         h1 = u1 * h_ + (1. - u1) * h1
         h1 = m_[:,None] * h1 + (1. - m_)[:,None] * h_
-
+        
         # attention
         pstate_ = tensor.dot(h1, W_comb_att)
-        pctx__ = pctx_ + pstate_[None,:,:]
+        pctx__ = pctx_ + pstate_[None,:,:] 
         #pctx__ += xc_
         pctx__ = tensor.tanh(pctx__)
         alpha = tensor.dot(pctx__, U_att)+c_tt
         alpha = alpha.reshape([alpha.shape[0], alpha.shape[1]])
-        # TODO: replace with numerically stable theano softmax
         alpha = tensor.exp(alpha)
         if context_mask:
             alpha = alpha * context_mask
@@ -940,9 +889,9 @@ def gru_cond_layer(tparams, state_below, options, prefix='gru',
     shared_vars = [tparams[_p(prefix, 'U')],
                    tparams[_p(prefix, 'Wc')],
                    tparams[_p(prefix,'W_comb_att')],
-                   tparams[_p(prefix,'U_att')],
-                   tparams[_p(prefix, 'c_tt')],
-                   tparams[_p(prefix, 'Ux')],
+                   tparams[_p(prefix,'U_att')], 
+                   tparams[_p(prefix, 'c_tt')], 
+                   tparams[_p(prefix, 'Ux')], 
                    tparams[_p(prefix, 'Wcx')],
                    tparams[_p(prefix, 'U_nl')],
                    tparams[_p(prefix, 'Ux_nl')],
@@ -952,12 +901,12 @@ def gru_cond_layer(tparams, state_below, options, prefix='gru',
     if one_step:
         rval = _step(*(seqs+[init_state, None, None, pctx_, context]+shared_vars))
     else:
-        rval, updates = theano.scan(_step,
+        rval, updates = theano.scan(_step, 
                                     sequences=seqs,
-                                    outputs_info = [init_state,
+                                    outputs_info = [init_state, 
                                                     tensor.alloc(0., n_samples, context.shape[2]),
                                                     tensor.alloc(0., n_samples, context.shape[0])],
-                                                    #None, None, None,
+                                                    #None, None, None, 
                                                     #None, None],
                                     non_sequences=[pctx_,
                                                    context]+shared_vars,
@@ -967,15 +916,14 @@ def gru_cond_layer(tparams, state_below, options, prefix='gru',
                                     strict=True)
     return rval
 
-
-def gru_double_att_layer(tparams, state_below, options, prefix='gru',
-                         target_mask=None, context=None, one_step=False,
-                         init_memory=None, init_state=None,
-                         context_mask=None,
-                         idx=None, hist_decatt=None, phist_decatt=None,
-                         **kwargs):
+def gru_covVec_cond_layer(tparams, state_below, options, prefix='gru', 
+                        mask=None, context=None, one_step=False, 
+                        init_memory=None, init_state=None, 
+                        context_mask=None, covVec_src_m_trg=None,
+                        **kwargs):
 
     assert context, 'Context must be provided'
+    assert covVec_src_m_trg, 'covVec_src_m_trg must be provided'
 
     if one_step:
         assert init_state, 'previous state must be provided'
@@ -987,27 +935,23 @@ def gru_double_att_layer(tparams, state_below, options, prefix='gru',
         n_samples = 1
 
     # mask
-    if target_mask == None:
+    if mask == None:
         mask = tensor.alloc(1., state_below.shape[0], 1)
-    else:
-        mask = target_mask
 
     dim = tparams[_p(prefix, 'Wcx')].shape[1]
 
     # initial/previous state
     if init_state == None:
         init_state = tensor.alloc(0., n_samples, dim)
-    if idx == None:
-        idx = 1
-    if hist_decatt == None:
-        hist_decatt = tensor.alloc(0., nsteps+1, n_samples, dim)  # history of decoder LSTM hidden layers
-    if phist_decatt == None:
-        phist_decatt = tensor.alloc(0., nsteps+1, n_samples, dim*2)  # projections of decoder LSTM hidden layers
 
-    # projected context
+    # projected context 
     assert context.ndim == 3, 'Context must be 3-d: #annotation x #sample x dim'
     pctx_ = tensor.dot(context, tparams[_p(prefix,'Wc_att')]) + tparams[_p(prefix,'b_att')]
 
+    # projected covVec
+    if options['covVec_in_attention']:
+        p_src_minus_trg = tensor.dot(covVec_src_m_trg, tparams[_p(prefix,'W_covVec_att')])
+        
     def _slice(_x, n, dim):
         if _x.ndim == 3:
             return _x[:, :, n*dim:(n+1)*dim]
@@ -1016,12 +960,15 @@ def gru_double_att_layer(tparams, state_below, options, prefix='gru',
     # projected x
     state_belowx = tensor.dot(state_below, tparams[_p(prefix, 'Wx')]) + tparams[_p(prefix, 'bx')]
     state_below_ = tensor.dot(state_below, tparams[_p(prefix, 'W')]) + tparams[_p(prefix, 'b')]
+    if options['covVec_in_decoder']:
+        p_covVecx = tensor.dot(covVec_src_m_trg, tparams[_p(prefix,'Wx_covVec_decoder')])
+        p_covVec_ = tensor.dot(covVec_src_m_trg, tparams[_p(prefix,'W_covVec_decoder')])
+        state_belowx += p_covVecx
+        state_below_ += p_covVec_
     #state_belowc = tensor.dot(state_below, tparams[_p(prefix, 'Wi_att')])
     #import ipdb; ipdb.set_trace()
-    def _step_slice(m_, x_, xx_, h_, ctx_, alpha_, idx_, hist_decatt, phist_decatt,
-                    pctx_, cc_,
-                    U, Wc, W_comb_att, U_att, c_tt, Ux, Wcx, U_nl, Ux_nl, b_nl, bx_nl, U_nl2, Ux_nl2, b_nl2, bx_nl2,
-                    W_currentState_decatt, W_ctx_decatt_att, Wh, Whx, W_h1_decatt, b_decatt, U_decatt, c_decatt):
+    def _step_slice(m_, x_, xx_, covVec_, h_, ctx_, alpha_, pctx_, cc_,
+                    U, Wc, W_comb_att, U_att, c_tt, Ux, Wcx, U_nl, Ux_nl, b_nl, bx_nl):
         preact1 = tensor.dot(h_, U)
         preact1 += x_
         preact1 = tensor.nnet.sigmoid(preact1)
@@ -1037,48 +984,22 @@ def gru_double_att_layer(tparams, state_below, options, prefix='gru',
 
         h1 = u1 * h_ + (1. - u1) * h1
         h1 = m_[:,None] * h1 + (1. - m_)[:,None] * h_
-
-
-        ###############################################
-        pdecatt = phist_decatt[:idx_]
-        pdecatt += tensor.dot(h1, W_currentState_decatt)
-        #pdecatt += tensor.dot(ctx_, W_ctx_decatt)
-
-        pdecatt = tensor.tanh(pdecatt)
-        alpha_decatt = tensor.dot(pdecatt, U_decatt)+c_decatt
-        alpha_decatt = alpha_decatt.reshape([alpha_decatt.shape[0], alpha_decatt.shape[1]])
-        # # TODO: replace with numerically stable theano softmax
-        alpha_decatt = tensor.exp(alpha_decatt)
-
-        if target_mask:  # That means we are in training mode
-            # We use the target mask since we are interested in the history of the target.
-            alpha_decatt = alpha_decatt * target_mask[:idx_]
-
-        alpha_decatt = alpha_decatt / alpha_decatt.sum(0, keepdims=True)
-        ctx_decatt = (hist_decatt[:idx_] * alpha_decatt[:,:,None]).sum(0)
-        ###############################################
-
+        
         # attention
         pstate_ = tensor.dot(h1, W_comb_att)
-        pctx__ = pctx_ + pstate_[None, :, :]
-        pctx__ += tensor.dot(ctx_decatt, W_ctx_decatt_att)
-
-        # pctx__ += xc_
+        pctx__ = pctx_ + pstate_[None,:,:] 
+        pctx__ += covVec_
         pctx__ = tensor.tanh(pctx__)
-        alpha = tensor.dot(pctx__, U_att) + c_tt
+        alpha = tensor.dot(pctx__, U_att)+c_tt
         alpha = alpha.reshape([alpha.shape[0], alpha.shape[1]])
-        # TODO: replace with numerically stable theano softmax
         alpha = tensor.exp(alpha)
         if context_mask:
             alpha = alpha * context_mask
         alpha = alpha / alpha.sum(0, keepdims=True)
-        ctx_ = (cc_ * alpha[:, :, None]).sum(0)  # current context
-
-        ###############################################
+        ctx_ = (cc_ * alpha[:,:,None]).sum(0) # current context
 
         preact2 = tensor.dot(h1, U_nl)+b_nl
-        #preact2 += tensor.dot(ctx_, Wc)
-        preact2 += tensor.dot(ctx_decatt, Wh)
+        preact2 += tensor.dot(ctx_, Wc)
         preact2 = tensor.nnet.sigmoid(preact2)
 
         r2 = _slice(preact2, 0, dim)
@@ -1086,89 +1007,39 @@ def gru_double_att_layer(tparams, state_below, options, prefix='gru',
 
         preactx2 = tensor.dot(h1, Ux_nl)+bx_nl
         preactx2 *= r2
-        #preactx2 += tensor.dot(ctx_, Wcx)
-        preactx2 += tensor.dot(ctx_decatt, Whx)
+        preactx2 += tensor.dot(ctx_, Wcx)
 
         h2 = tensor.tanh(preactx2)
 
         h2 = u2 * h1 + (1. - u2) * h2
         h2 = m_[:,None] * h2 + (1. - m_)[:,None] * h1
 
-        ################################################
+        return h2, ctx_, alpha.T #, pstate_, preact, preactx, r, u
 
-        preact3 = tensor.dot(h2, U_nl2)+b_nl2
-        preact3 += tensor.dot(ctx_, Wc)
-        #preact3 += tensor.dot(ctx_decatt, Wh)
-        preact3 = tensor.nnet.sigmoid(preact3)
-
-        r3 = _slice(preact3, 0, dim)
-        u3 = _slice(preact3, 1, dim)
-
-        preactx3 = tensor.dot(h2, Ux_nl2)+bx_nl2
-        preactx3 *= r3
-        preactx3 += tensor.dot(ctx_, Wcx)
-        #preactx3 += tensor.dot(ctx_decatt, Whx)
-
-        h3 = tensor.tanh(preactx3)
-
-        h3 = u3 * h2 + (1. - u3) * h3
-        h3 = m_[:,None] * h3 + (1. - m_)[:,None] * h2
-
-        ################################################
-        # History and index update
-        pdec_hiddens = tensor.dot(h1, W_h1_decatt) + b_decatt
-        #pdec_hiddens += tensor.dot(h2, W_h2_decatt)
-
-        new_phist_decatt = tensor.set_subtensor(phist_decatt[idx_], pdec_hiddens)
-        #new_hist_decatt = tensor.set_subtensor(hist_decatt[idx_], tensor.concatenate([h1,h2], axis=1))
-        new_hist_decatt = tensor.set_subtensor(hist_decatt[idx_], h1)
-        new_idx = idx_ + 1
-        ###############################################
-
-        return h3, ctx_, alpha.T, new_idx, new_hist_decatt, new_phist_decatt #, pstate_, preact, preactx, r, u
-
-    seqs = [mask, state_below_, state_belowx]
-    #seqs = [mask, state_below_, state_belowx, state_belowc]
+    seqs = [mask, state_below_, state_belowx, p_src_minus_trg]
     _step = _step_slice
 
     shared_vars = [tparams[_p(prefix, 'U')],
                    tparams[_p(prefix, 'Wc')],
                    tparams[_p(prefix,'W_comb_att')],
-                   tparams[_p(prefix,'U_att')],
-                   tparams[_p(prefix, 'c_tt')],
-                   tparams[_p(prefix, 'Ux')],
+                   tparams[_p(prefix,'U_att')], 
+                   tparams[_p(prefix, 'c_tt')], 
+                   tparams[_p(prefix, 'Ux')], 
                    tparams[_p(prefix, 'Wcx')],
                    tparams[_p(prefix, 'U_nl')],
                    tparams[_p(prefix, 'Ux_nl')],
                    tparams[_p(prefix, 'b_nl')],
-                   tparams[_p(prefix, 'bx_nl')],
-                   tparams[_p(prefix, 'U_nl2')],
-                   tparams[_p(prefix, 'Ux_nl2')],
-                   tparams[_p(prefix, 'b_nl2')],
-                   tparams[_p(prefix, 'bx_nl2')],
-                   tparams[_p(prefix, 'W_currentState_decatt')],
-                   tparams[_p(prefix, 'W_ctx_decatt_att')],
-                   tparams[_p(prefix, 'Wh')],
-                   tparams[_p(prefix, 'Whx')],
-                   tparams[_p(prefix, 'W_h1_decatt')],
-                   #tparams[_p(prefix, 'W_h2_decatt')],
-                   tparams[_p(prefix, 'b_decatt')],
-                   tparams[_p(prefix, 'U_decatt')],
-                   tparams[_p(prefix, 'c_decatt')]]
+                   tparams[_p(prefix, 'bx_nl')]]
 
     if one_step:
-        rval = _step(*(seqs+[init_state, None, None, idx, hist_decatt, phist_decatt, pctx_, context]+shared_vars))
+        rval = _step(*(seqs+[init_state, None, None, pctx_, context]+shared_vars))
     else:
-        rval, updates = theano.scan(_step,
+        rval, updates = theano.scan(_step, 
                                     sequences=seqs,
-                                    outputs_info = [init_state,
+                                    outputs_info = [init_state, 
                                                     tensor.alloc(0., n_samples, context.shape[2]),
-                                                    tensor.alloc(0., n_samples, context.shape[0]),
-                                                    idx,
-                                                    hist_decatt,
-                                                    phist_decatt,
-                                                    ], # index of the current word (time step)
-                                                    #None, None, None,
+                                                    tensor.alloc(0., n_samples, context.shape[0])],
+                                                    #None, None, None, 
                                                     #None, None],
                                     non_sequences=[pctx_,
                                                    context]+shared_vars,
@@ -1178,10 +1049,7 @@ def gru_double_att_layer(tparams, state_below, options, prefix='gru',
                                     strict=True)
     return rval
 
-
-
-
-# Hierarchical GRU layer
+# Hierarchical GRU layer 
 def param_init_gru_hiero(options, params, prefix='gru_hiero', nin=None, dimctx=None):
     if nin == None:
         nin = options['dim']
@@ -1207,7 +1075,7 @@ def param_init_gru_hiero(options, params, prefix='gru_hiero', nin=None, dimctx=N
     b_att = numpy.zeros((dimctx,)).astype('float32')
     params[_p(prefix,'b_att')] = b_att
 
-    # attention:
+    # attention: 
     U_att = norm_weight(dimctx,1)
     params[_p(prefix,'U_att')] = U_att
     c_att = numpy.zeros((1,)).astype('float32')
@@ -1221,7 +1089,7 @@ def param_init_gru_hiero(options, params, prefix='gru_hiero', nin=None, dimctx=N
 
     return params
 
-def gru_hiero_layer(tparams, context, options, prefix='gru_hiero',
+def gru_hiero_layer(tparams, context, options, prefix='gru_hiero', 
                     context_mask=None, **kwargs):
 
     nsteps = context.shape[0]
@@ -1241,7 +1109,7 @@ def gru_hiero_layer(tparams, context, options, prefix='gru_hiero',
     # initial/previous state
     init_state = tensor.alloc(0., n_samples, dim)
 
-    # projected context
+    # projected context 
     assert context.ndim == 3, 'Context must be 3-d: #annotation x #sample x dim'
     pctx_ = tensor.dot(context, tparams[_p(prefix,'Wc_att')]) + tparams[_p(prefix,'b_att')]
 
@@ -1254,7 +1122,7 @@ def gru_hiero_layer(tparams, context, options, prefix='gru_hiero',
                     U, Wc, Wd_att, U_att, c_tt, Ux, Wx, bx, W_st, b_st):
         # attention
         pstate_ = tensor.dot(h_, Wd_att)
-        pctx__ = pp_ + pstate_[None,:,:]
+        pctx__ = pp_ + pstate_[None,:,:] 
         pctx__ = tensor.tanh(pctx__)
         alpha = tensor.dot(pctx__, U_att)+c_tt
         alpha = alpha.reshape([alpha.shape[0], alpha.shape[1]])
@@ -1290,25 +1158,25 @@ def gru_hiero_layer(tparams, context, options, prefix='gru_hiero',
 
     _step = _step_slice
 
-    rval, updates = theano.scan(_step,
+    rval, updates = theano.scan(_step, 
                                 sequences=[mask],
-                                outputs_info = [init_state,
+                                outputs_info = [init_state, 
                                                 tensor.alloc(0., n_samples, context.shape[2]),
                                                 tensor.alloc(0., n_samples, context.shape[0]),
                                                 tensor.alloc(1., n_samples)],
-                                                #None, None, None,
+                                                #None, None, None, 
                                                 #None, None],
-                                non_sequences=[pctx_,
+                                non_sequences=[pctx_, 
                                                context,
                                                tparams[_p(prefix, 'U')],
                                                tparams[_p(prefix, 'Wc')],
-                                               tparams[_p(prefix,'Wd_att')],
-                                               tparams[_p(prefix,'U_att')],
-                                               tparams[_p(prefix, 'c_tt')],
-                                               tparams[_p(prefix, 'Ux')],
+                                               tparams[_p(prefix,'Wd_att')], 
+                                               tparams[_p(prefix,'U_att')], 
+                                               tparams[_p(prefix, 'c_tt')], 
+                                               tparams[_p(prefix, 'Ux')], 
                                                tparams[_p(prefix, 'Wx')],
-                                               tparams[_p(prefix, 'bx')],
-                                               tparams[_p(prefix, 'W_st')],
+                                               tparams[_p(prefix, 'bx')], 
+                                               tparams[_p(prefix, 'W_st')], 
                                                tparams[_p(prefix, 'b_st')]],
                                 name=_p(prefix, '_layers'),
                                 n_steps=nsteps,
@@ -1376,7 +1244,7 @@ def lstm_layer(tparams, state_below, options, prefix='lstm', mask=None, **kwargs
 
     state_below = tensor.dot(state_below, tparams[_p(prefix, 'W')]) + tparams[_p(prefix, 'b')]
 
-    rval, updates = theano.scan(_step,
+    rval, updates = theano.scan(_step, 
                                 sequences=[mask, state_below],
                                 outputs_info = [tensor.alloc(0., n_samples, dim),
                                                 tensor.alloc(0., n_samples, dim),
@@ -1417,7 +1285,7 @@ def param_init_lstm_cond(options, params, prefix='lstm_cond', nin=None, dim=None
     b_att = numpy.zeros((dimctx,)).astype('float32')
     params[_p(prefix,'b_att')] = b_att
 
-    # attention:
+    # attention: 
     U_att = norm_weight(dimctx,1)
     params[_p(prefix,'U_att')] = U_att
     c_att = numpy.zeros((1,)).astype('float32')
@@ -1425,9 +1293,9 @@ def param_init_lstm_cond(options, params, prefix='lstm_cond', nin=None, dim=None
 
     return params
 
-def lstm_cond_layer(tparams, state_below, options, prefix='lstm',
-                    mask=None, context=None, one_step=False,
-                    init_memory=None, init_state=None,
+def lstm_cond_layer(tparams, state_below, options, prefix='lstm', 
+                    mask=None, context=None, one_step=False, 
+                    init_memory=None, init_state=None, 
                     context_mask=None,
                     **kwargs):
 
@@ -1452,11 +1320,11 @@ def lstm_cond_layer(tparams, state_below, options, prefix='lstm',
     # initial/previous state
     if init_state == None:
         init_state = tensor.alloc(0., n_samples, dim)
-    # initial/previous memory
+    # initial/previous memory 
     if init_memory == None:
         init_memory = tensor.alloc(0., n_samples, dim)
 
-    # projected context
+    # projected context 
     assert context.ndim == 3, 'Context must be 3-d: #annotation x #sample x dim'
     pctx_ = tensor.dot(context, tparams[_p(prefix,'Wc_att')]) + tparams[_p(prefix,'b_att')]
 
@@ -1473,7 +1341,7 @@ def lstm_cond_layer(tparams, state_below, options, prefix='lstm',
 
         # attention
         pstate_ = tensor.dot(h_, tparams[_p(prefix,'Wd_att')])
-        pctx__ = pctx_ + pstate_[None,:,:]
+        pctx__ = pctx_ + pstate_[None,:,:] 
         pctx__ += xc_
         pctx__ = tensor.tanh(pctx__)
         alpha = tensor.dot(pctx__, tparams[_p(prefix,'U_att')])+tparams[_p(prefix, 'c_tt')]
@@ -1504,12 +1372,12 @@ def lstm_cond_layer(tparams, state_below, options, prefix='lstm',
     if one_step:
         rval = _step(mask, state_below, state_belowc, init_state, init_memory, None, None, pctx_)
     else:
-        rval, updates = theano.scan(_step,
+        rval, updates = theano.scan(_step, 
                                     sequences=[mask, state_below, state_belowc],
                                     outputs_info = [init_state, init_memory,
                                                     tensor.alloc(0., n_samples, context.shape[2]),
                                                     tensor.alloc(0., n_samples, context.shape[0]),
-                                                    None, None, None,
+                                                    None, None, None, 
                                                     None, None],
                                     non_sequences=[pctx_],
                                     name=_p(prefix, '_layers'),
@@ -1526,28 +1394,44 @@ def init_params(options):
     params['Wemb'] = norm_weight(options['n_words_src'], options['dim_word'])
     params['Wemb_dec'] = norm_weight(options['n_words'], options['dim_word'])
 
+    # covVec embeddings
+    if options['covVec']:
+        params['Wemb_covVec_src'] = norm_weight(options['n_words_src'], options['dim_word'])
+        params['Wemb_covVec_trg'] = norm_weight(options['n_words'], options['dim_word'])
+
+        # covVec LSTMs params
+        params = get_layer('gru')[0](options, params, prefix='covVec_encoder', 
+                                     nin=options['dim_word'], dim=options['dim'])
+        params = get_layer('gru')[0](options, params, prefix='covVec_decoder', 
+                                     nin=options['dim_word'], dim=options['dim'])
+
+
+
 
     # encoder: LSTM
-    params = get_layer(options['encoder'])[0](options, params, prefix='encoder',
+    params = get_layer(options['encoder'])[0](options, params, prefix='encoder', 
                                               nin=options['dim_word'], dim=options['dim'])
     ctxdim = options['dim']
     if not options['decoder'].endswith('simple'):
         ctxdim = options['dim'] * 2
-        params = get_layer(options['encoder'])[0](options, params, prefix='encoder_r',
+        params = get_layer(options['encoder'])[0](options, params, prefix='encoder_r', 
                                                   nin=options['dim_word'], dim=options['dim'])
         if options['hiero']:
-            params = get_layer(options['hiero'])[0](options, params, prefix='hiero',
+            params = get_layer(options['hiero'])[0](options, params, prefix='hiero', 
                                                     nin=2*options['dim'], dimctx=2*options['dim'])
     # init_state, init_cell
     params = get_layer('ff')[0](options, params, prefix='ff_state', nin=ctxdim, nout=options['dim'])
     if options['encoder'] == 'lstm':
         params = get_layer('ff')[0](options, params, prefix='ff_memory', nin=ctxdim, nout=options['dim'])
     # decoder: LSTM
-    params = get_layer(options['decoder'])[0](options, params, prefix='decoder',
-                                              nin=options['dim_word'], dim=options['dim'],
+    params = get_layer(options['decoder'])[0](options, params, prefix='decoder', 
+                                              nin=options['dim_word'], dim=options['dim'], 
                                               dimctx=ctxdim)
 
-
+    
+    if options['covVec_in_pred']:
+        params = get_layer('ff_nb')[0](options, params, prefix='ff_nb_logit_covVec', nin=options['dim_word'], nout=options['dim_word'], ortho=False)
+    
 
     # readout
     params = get_layer('ff')[0](options, params, prefix='ff_logit_lstm', nin=options['dim'], nout=options['dim_word'], ortho=False)
@@ -1566,13 +1450,9 @@ def build_model(tparams, options):
 
     # description string: #words x #samples
     x = tensor.matrix('x', dtype='int64')
-    x.tag.test_value = np.zeros((50, 2), dtype="int64")
     x_mask = tensor.matrix('x_mask', dtype='float32')
-    x_mask.tag.test_value = np.ones((50, 2), dtype="float32")
     y = tensor.matrix('y', dtype='int64')
-    y.tag.test_value = np.zeros((50, 2), dtype="int64")
     y_mask = tensor.matrix('y_mask', dtype='float32')
-    y_mask.tag.test_value = np.ones((50, 2), dtype="float32")
 
     xr = x[::-1]
     xr_mask = x_mask[::-1]
@@ -1581,7 +1461,7 @@ def build_model(tparams, options):
     n_timesteps_trg = y.shape[0]
     n_samples = x.shape[1]
     src_lengths = x_mask.sum(axis=0)
-
+    
     emb = tparams['Wemb'][x.flatten()].reshape([n_timesteps, n_samples, options['dim_word']])
     proj = get_layer(options['encoder'])[1](tparams, emb, options,
                                             prefix='encoder',
@@ -1616,16 +1496,41 @@ def build_model(tparams, options):
     emb_shifted = tensor.zeros_like(emb)
     emb_shifted = tensor.set_subtensor(emb_shifted[1:], emb[:-1])
     emb = emb_shifted
+    
+    #####################################
+    if options['covVec']:
+        # Source
+        emb_covVec_src = tparams['Wemb_covVec_src'][x.flatten()].reshape([n_timesteps, n_samples, options['dim_word']])
+        proj_covVec_src = get_layer('gru')[1](tparams, emb_covVec_src, options,
+                                              prefix='covVec_encoder',
+                                              mask=x_mask)
 
+        # Target
+        emb_bow_trg = tparams['Wemb_covVec_trg'][y.flatten()].reshape([n_timesteps_trg, n_samples, options['dim_word']])
+        proj_covVec_trg = get_layer('gru')[1](tparams, emb_covVec_trg, options,
+                                              prefix='covVec_decoder',
+                                              mask=y_mask)
+
+        # Make the source minus target matrix and concatenate to the embedings
+        covVec_src_m_trg = proj_covVec_src[0][-1] - proj_covVec_trg[0]
+
+        # euclidean distance for the cost
+        covVec_diff = (proj_covVec_src[0][-1] - proj_covVec_trg[0][-1])
+        covVec_eucl_cost = tensor.sqrt(tensor.pow(2, covVec_diff).sum(axis=1)).mean()
+
+    else:
+        covVec_src_m_trg = None
+    ####################################
 
     # decoder
-    proj = get_layer(options['decoder'])[1](tparams, emb, options,
-                                            prefix='decoder',
-                                            mask=y_mask, context=ctx,
+    proj = get_layer(options['decoder'])[1](tparams, emb, options, 
+                                            prefix='decoder', 
+                                            mask=y_mask, context=ctx, 
                                             context_mask=x_mask,
-                                            one_step=False,
+                                            one_step=False, 
                                             init_state=init_state,
-                                            init_memory=init_memory)
+                                            init_memory=init_memory,
+                                            covVec_src_m_trg=covVec_src_m_trg)
     proj_h = proj[0]
     if options['decoder'].endswith('simple'):
         ctxs = ctx[None,:,:]
@@ -1640,9 +1545,12 @@ def build_model(tparams, options):
     logit_lstm = get_layer('ff')[1](tparams, proj_h, options, prefix='ff_logit_lstm', activ='linear')
     logit_prev = get_layer('ff_nb')[1](tparams, emb, options, prefix='ff_nb_logit_prev', activ='linear')
     logit_ctx = get_layer('ff_nb')[1](tparams, ctxs, options, prefix='ff_nb_logit_ctx', activ='linear')
-
-    logit = tensor.tanh(logit_lstm+logit_prev+logit_ctx)
-
+    if options['covVec_in_pred']:
+        logit_covVec = get_layer('ff_nb')[1](tparams, covVec_src_m_trg, options, prefix='ff_nb_logit_covVec', activ='linear')
+        logit = tensor.tanh(logit_lstm+logit_prev+logit_ctx+logit_covVec)
+    else:
+        logit = tensor.tanh(logit_lstm+logit_prev+logit_ctx)
+    
     logit = get_layer('ff')[1](tparams, logit, options, prefix='ff_logit', activ='linear')
     logit_shp = logit.shape
     probs = tensor.nnet.softmax(logit.reshape([logit_shp[0]*logit_shp[1], logit_shp[2]]))
@@ -1652,13 +1560,14 @@ def build_model(tparams, options):
     cost = -tensor.log(probs.flatten()[y_flat_idx])
     cost = cost.reshape([y.shape[0],y.shape[1]])
     cost = (cost * y_mask).sum(0)
+    if options['covVec']:
+        cost += options['euclidean_coeff'] * covVec_eucl_cost
 
     return trng, use_noise, x, x_mask, y, y_mask, opt_ret, cost
 
 # build a sampler
 def build_sampler(tparams, options, trng):
     x = tensor.matrix('x', dtype='int64')
-    x.tag.test_value = np.zeros((50, 1), dtype="int64")
     xr = x[::-1]
     n_timesteps = x.shape[0]
     n_samples = x.shape[1]
@@ -1667,8 +1576,17 @@ def build_sampler(tparams, options, trng):
     emb = tparams['Wemb'][x.flatten()].reshape([n_timesteps, n_samples, options['dim_word']])
     embr = tparams['Wemb'][xr.flatten()].reshape([n_timesteps, n_samples, options['dim_word']])
 
+    #####################################
+    if options['covVec']:
+        # Source: Compute the sentence representation
+        emb_covVec_src = tparams['Wemb_covVec_src'][x.flatten()].reshape([n_timesteps, n_samples, options['dim_word']])
+        proj_covVec_src = get_layer('gru')[1](tparams, emb_covVec_src, options,
+                                              prefix='covVec_encoder',
+                                              mask=x_mask)
 
-    print 'Building f_init...',
+        emb_covVec_sentence_src = proj_covVec_src[0][-1]
+    ######################################
+
     # encoder
     proj = get_layer(options['encoder'])[1](tparams, emb, options, prefix='encoder')
     if options['decoder'].endswith('simple'):
@@ -1687,65 +1605,55 @@ def build_sampler(tparams, options, trng):
     if options['encoder'] == 'lstm':
         init_memory = get_layer('ff')[1](tparams, ctx_mean, options, prefix='ff_memory', activ='tanh')
 
+    print 'Building f_init...',
     outs = [init_state, ctx]
     if options['decoder'].startswith('lstm'):
         outs += [init_memory]
-
-    #####################################
-    if options['decoder'] == "gru_cond_double":
-        idx = theano.shared(np.array(1, dtype="int64"))
-        hist_decatt = tensor.alloc(0., options['maxlen']+1, n_samples, options['dim'])  # history of decoder LSTM
-        phist_decatt = tensor.alloc(0., options['maxlen']+1, n_samples, options['dim']*2)  # projections of decoder LSTM
-        outs += [idx, hist_decatt, phist_decatt]
-    #####################################
-
+    if options['covVec']:
+        outs += [emb_covVec_sentence_src[0]]
     f_init = theano.function([x], outs, name='f_init', profile=profile)
     print 'Done'
 
-    print 'Building f_next..',
     # x: 1 x 1
     y = tensor.vector('y_sampler', dtype='int64')
-    y.tag.test_value = np.array([1])
-    n_timesteps = ctx.shape[0]
-
-    # if it's the first word, emb should be all zero
-    emb = tensor.switch(y[:,None] < 0, tensor.alloc(0., 1, tparams['Wemb_dec'].shape[1]),
-                        tparams['Wemb_dec'][y])
+    emb_covVec_sentence_src = tensor.vector('emb_covVec_sentence_src', dtype='float32')
+    #emb_bow_trg = tensor.matrix('emb_bow_trg', dtype='float32')
 
     init_state = tensor.matrix('init_state', dtype='float32')
-    init_state.tag.test_value = np.zeros((1, 20), dtype="float32")
     if options['decoder'].startswith('lstm'):
         init_memory = tensor.matrix('init_memory', dtype='float32')
-        #init_memory.tag.test_value = np.zeros((2, 20), dtype="float32")
     else:
         init_memory = None
+    
+    n_timesteps = ctx.shape[0]
+        
+    # if it's the first word, emb should be all zero
+    emb = tensor.switch(y[:,None] < 0, tensor.alloc(0., 1, tparams['Wemb_dec'].shape[1]), 
+                        tparams['Wemb_dec'][y])
 
-    if options['decoder'] == "gru_cond_double":
-        idx = tensor.scalar('idx', dtype='int64')
-        idx.tag.test_value = 1
-        hist_decatt = tensor.tensor3('hist_decatt', dtype='float32')
-        hist_decatt.tag.test_value = np.zeros((50+1, 1, options['dim']), dtype="float32")
-        phist_decatt = tensor.tensor3('phist_decatt', dtype='float32')
-        phist_decatt.tag.test_value = np.zeros((50+1, 1, options['dim']*2), dtype="float32")
+    #####################################
+    if options['covVec']:
+        # Target: Compute the representation of a word and the previous ones at each time steps
+        emb_covVec_one_new_trg = tensor.switch(y[:,None] < 0, tensor.alloc(0., 1, tparams['Wemb_covVec_trg'].shape[1]), 
+                                        tparams['Wemb_covVec_trg'][y])
 
-        proj = get_layer(options['decoder'])[1](tparams, emb, options,
-                                                prefix='decoder',
-                                                mask=None, context=ctx,
-                                                one_step=True,
-                                                init_state=init_state,
-                                                init_memory=init_memory,
-                                                idx=idx,
-                                                hist_decatt=hist_decatt,
-                                                phist_decatt=phist_decatt)
+        init_covVec_state = tensor.matrix('init_covVec_state', dtype='float32')
+        proj_covVec_trg = get_layer('gru')[1](tparams, emb_covVec_one_new_trg, options, prefix='covVec_decoder', one_step=True, init_state=init_covVec_state)
 
+        next_covVec_state = proj_covVec_trg[0]
+
+        covVec_src_m_trg = emb_covVec_sentence_src - next_covVec_state
+        
     else:
-        proj = get_layer(options['decoder'])[1](tparams, emb, options,
-                                                prefix='decoder',
-                                                mask=None, context=ctx,
-                                                one_step=True,
-                                                init_state=init_state,
-                                                init_memory=init_memory)
+        covVec_src_m_trg = None
 
+    proj = get_layer(options['decoder'])[1](tparams, emb, options, 
+                                            prefix='decoder', 
+                                            mask=None, context=ctx, 
+                                            one_step=True, 
+                                            init_state=init_state,
+                                            init_memory=init_memory,
+                                            covVec_src_m_trg=covVec_src_m_trg)
     if options['decoder'].endswith('simple'):
         next_state = proj
         ctxs = ctx
@@ -1759,33 +1667,33 @@ def build_sampler(tparams, options, trng):
     logit_lstm = get_layer('ff')[1](tparams, next_state, options, prefix='ff_logit_lstm', activ='linear')
     logit_prev = get_layer('ff_nb')[1](tparams, emb, options, prefix='ff_nb_logit_prev', activ='linear')
     logit_ctx = get_layer('ff_nb')[1](tparams, ctxs, options, prefix='ff_nb_logit_ctx', activ='linear')
-
-    logit = tensor.tanh(logit_lstm+logit_prev+logit_ctx)
-
+    if options['covVec_in_pred']:
+        logit_covVec = get_layer('ff_nb')[1](tparams, covVec_src_m_trg, options, prefix='ff_nb_logit_covVec', activ='linear')
+        logit = tensor.tanh(logit_lstm+logit_prev+logit_ctx+logit_covVec)
+    else:
+        logit = tensor.tanh(logit_lstm+logit_prev+logit_ctx)
+    
     logit = get_layer('ff')[1](tparams, logit, options, prefix='ff_logit', activ='linear')
     next_probs = tensor.nnet.softmax(logit)
     next_sample = trng.multinomial(pvals=next_probs).argmax(1)
 
     # next word probability
+    print 'Building f_next..', 
     inps = [y, ctx, init_state]
     outs = [next_probs, next_sample, next_state]
     if options['decoder'].startswith('lstm'):
         inps += [init_memory]
         outs += [next_memory]
-    if options['decoder'] == "gru_cond_double":
-        next_idx = proj[3]
-        next_hist_decatt = proj[4]
-        next_phist_decatt = proj[5]
-        inps += [idx, hist_decatt, phist_decatt]
-        outs += [next_idx, next_hist_decatt, next_phist_decatt]
-
+    if options['covVec']:
+        inps += [emb_covVec_sentence_src, init_covVec_state]
+        outs += [next_covVec_state]
     f_next = theano.function(inps, outs, name='f_next', profile=profile)
     print 'Done'
 
     return f_init, f_next
 
 # generate sample
-def gen_sample(tparams, f_init, f_next, x, options, trng=None, k=1, maxlen=30,
+def gen_sample(tparams, f_init, f_next, x, options, trng=None, k=1, maxlen=30, 
                minlen=-1, stochastic=True, argmax=False):
     if k > 1:
         assert not stochastic, 'Beam search does not support stochastic sampling'
@@ -1803,32 +1711,30 @@ def gen_sample(tparams, f_init, f_next, x, options, trng=None, k=1, maxlen=30,
     hyp_states = []
     if options['decoder'].startswith('lstm'):
         hyp_memories = []
+    if options['covVec']:
+        hyp_covVec_states = []
 
     ret = f_init(x)
     next_state = ret.pop(0)
     ctx0 = ret.pop(0)
     if options['decoder'].startswith('lstm'):
         next_memory = ret.pop(0)
-
-    if options['decoder'] == "gru_cond_double":
-        next_idx = ret.pop(0)
-        next_hist_decatt = ret.pop(0)
-        next_phist_decatt = ret.pop(0)
-
+    if options['covVec']:
+        emb_covVec_sentence_src = ret.pop(0)
+    next_covVec_state = numpy.zeros((1, options['dim']), dtype='float32')
     next_w = -1 * numpy.ones((1,)).astype('int64')
 
     for ii in xrange(maxlen):
         if options['decoder'].endswith('simple'):
             ctx = numpy.tile(ctx0, [live_k, 1])
         else:
-            ctx = numpy.tile(ctx0.reshape((ctx0.shape[0],ctx0.shape[2])),
+            ctx = numpy.tile(ctx0.reshape((ctx0.shape[0],ctx0.shape[2])), 
                                           [live_k, 1, 1]).transpose((1,0,2))
         inps = [next_w, ctx, next_state]
         if options['decoder'].startswith('lstm'):
             inps += [next_memory]
-
-        if options['decoder'] == "gru_cond_double":
-            inps += [next_idx, next_hist_decatt, next_phist_decatt]
+        if options['covVec']:
+            inps += [emb_covVec_sentence_src, next_covVec_state]
 
         ret = f_next(*inps)
         next_p = ret.pop(0)
@@ -1836,11 +1742,8 @@ def gen_sample(tparams, f_init, f_next, x, options, trng=None, k=1, maxlen=30,
         next_state = ret.pop(0)
         if options['decoder'].startswith('lstm'):
             next_memory = ret.pop(0)
-
-        if options['decoder'] == "gru_cond_double":
-            next_idx = ret.pop(0)
-            next_hist_decatt = ret.pop(0)
-            next_phist_decatt = ret.pop(0)
+        if options['covVec']:
+            next_covVec_state = ret.pop(0)
 
         if stochastic:
             if argmax:
@@ -1852,23 +1755,22 @@ def gen_sample(tparams, f_init, f_next, x, options, trng=None, k=1, maxlen=30,
             if nw == 0:
                 break
         else:
-            # Get top K words [given hypothesis samples]
             cand_scores = hyp_scores[:,None] - numpy.log(next_p)
             cand_flat = cand_scores.flatten()
             ranks_flat = cand_flat.argsort()[:(k-dead_k)]
-
+            
             voc_size = next_p.shape[1]
-            trans_indices = ranks_flat / voc_size  # Because of the flatten
-            word_indices = ranks_flat % voc_size   # Because of the flatten
+            trans_indices = ranks_flat / voc_size
+            word_indices = ranks_flat % voc_size
             costs = cand_flat[ranks_flat]
 
             new_hyp_samples = []
             new_hyp_scores = numpy.zeros(k-dead_k).astype('float32')
             new_hyp_states = []
-            new_hyp_hist_decatt = []
-            new_hyp_phist_decatt = []
             if options['decoder'].startswith('lstm'):
                 new_hyp_memories = []
+            if options['covVec']:
+                new_hyp_covVec_states = []
 
             for idx, [ti, wi] in enumerate(zip(trans_indices, word_indices)):
                 new_hyp_samples.append(hyp_samples[ti]+[wi])
@@ -1876,20 +1778,18 @@ def gen_sample(tparams, f_init, f_next, x, options, trng=None, k=1, maxlen=30,
                 new_hyp_states.append(copy.copy(next_state[ti]))
                 if options['decoder'].startswith('lstm'):
                     new_hyp_memories.append(copy.copy(next_memory[ti]))
-
-                if options['decoder'] == "gru_cond_double":
-                    new_hyp_hist_decatt.append(copy.copy(next_hist_decatt[:, [ti], :]))
-                    new_hyp_phist_decatt.append(copy.copy(next_phist_decatt[:, [ti], :]))
+                if options['covVec']:
+                    new_hyp_covVec_states.append(copy.copy(next_covVec_state[ti]))
 
             # check the finished samples
             new_live_k = 0
             hyp_samples = []
             hyp_scores = []
             hyp_states = []
-            hyp_hist_decatt = []
-            hyp_phist_decatt = []
             if options['decoder'].startswith('lstm'):
                 hyp_memories = []
+            if options['covVec']:
+                hyp_covVec_states = []
 
             for idx in xrange(len(new_hyp_samples)):
                 if new_hyp_samples[idx][-1] == 0:
@@ -1904,10 +1804,8 @@ def gen_sample(tparams, f_init, f_next, x, options, trng=None, k=1, maxlen=30,
                     hyp_states.append(new_hyp_states[idx])
                     if options['decoder'].startswith('lstm'):
                         hyp_memories.append(new_hyp_memories[idx])
-                    if options['decoder'] == "gru_cond_double":
-                        hyp_hist_decatt.append(new_hyp_hist_decatt[idx])
-                        hyp_phist_decatt.append(new_hyp_phist_decatt[idx])
-
+                    if options['covVec']:
+                        hyp_covVec_states.append(new_hyp_covVec_states[idx])
             hyp_scores = numpy.array(hyp_scores)
             live_k = new_live_k
 
@@ -1920,9 +1818,8 @@ def gen_sample(tparams, f_init, f_next, x, options, trng=None, k=1, maxlen=30,
             next_state = numpy.array(hyp_states)
             if options['decoder'].startswith('lstm'):
                 next_memory = numpy.array(hyp_memories)
-            if options['decoder'] == "gru_cond_double":
-                next_hist_decatt = numpy.concatenate(hyp_hist_decatt, axis=1)
-                next_phist_decatt = numpy.concatenate(hyp_phist_decatt, axis=1)
+            if options['covVec']:
+                next_covVec_state = numpy.array(hyp_covVec_states)
 
     if not stochastic:
         # dump every remaining one
@@ -1944,7 +1841,7 @@ def pred_probs(f_log_probs, prepare_data, options, iterator, verbose=True):
         n_done += len(x)
 
         x, x_mask, y, y_mask = prepare_data(x, y, maxlen=50, n_words_src=options['n_words_src'], n_words=options['n_words'])
-
+        
         if x == None:
             continue
 
@@ -2000,8 +1897,8 @@ def adadelta(lr, tparams, grads, inp, cost):
 
     rg2_new = [0.95 * rg2 + 0.05 * (g ** 2) for rg2, g in zip(running_grads2, grads)]
     rg2up = [(rg2, r_n) for rg2, r_n in zip(running_grads2, rg2_new)]
-
-
+    
+    
     updir = [-tensor.sqrt(ru2 + 1e-6) / tensor.sqrt(rg2 + 1e-6) * zg for zg, ru2, rg2 in zip(grads, running_up2, rg2_new)]
     ru2up = [(ru2, 0.95 * ru2 + 0.05 * (ud ** 2)) for ru2, ud in zip(running_up2, updir)]
     param_up = [(p, p + ud) for p, ud in zip(itemlist(tparams), updir)]
@@ -2020,8 +1917,8 @@ def debugging_adadelta(lr, tparams, grads, inp, cost):
     rg2up = [(rg2, 0.95 * rg2 + 0.05 * (g ** 2)) for rg2, g in zip(running_grads2, grads)]
 
     f_grad_shared = theano.function(inp, cost, updates=zgup+rg2up, profile=profile)
-
-
+    
+    
     updir = [-tensor.sqrt(ru2 + 1e-6) / tensor.sqrt(rg2 + 1e-6) * zg for zg, ru2, rg2 in zip(zipped_grads, running_up2, running_grads2)]
     ru2up = [(ru2, 0.95 * ru2 + 0.05 * (ud ** 2)) for ru2, ud in zip(running_up2, updir)]
     param_up = [(p, p + ud) for p, ud in zip(itemlist(tparams), updir)]
@@ -2068,14 +1965,14 @@ def train(dim_word=100, # word vector dimensionality
           patience=10,
           max_epochs=5000,
           dispFreq=100,
-          decay_c=0.,
-          alpha_c=0.,
+          decay_c=0., 
+          alpha_c=0., 
           diag_c=0.,
-          lrate=0.01,
+          lrate=0.01, 
           n_words_src=100000,
           n_words=100000,
           maxlen=100, # maximum length of the description
-          optimizer='rmsprop',
+          optimizer='rmsprop', 
           batch_size = 16,
           valid_batch_size = 16,
           saveto='model.npz',
@@ -2087,12 +1984,18 @@ def train(dim_word=100, # word vector dimensionality
           dictionary_src=None, # word dictionary
           use_dropout=False,
           reload_=False,
-          correlation_coeff=0.1,
+          euclidean_coeff=0.1,
+          covVec_in_attention=False,
+          covVec_in_decoder=False,
+          covVec_in_pred=False,
           clip_c=0.):
 
     # Model options
     model_options = locals().copy()
 
+    covVec = covVec_in_attention or covVec_in_decoder or covVec_in_pred
+    model_options['covVec'] = covVec
+    
     if dictionary:
         with open(dictionary, 'rb') as f:
             word_dict = pkl.load(f)
@@ -2133,7 +2036,7 @@ def train(dim_word=100, # word vector dimensionality
 
     #theano.printing.debugprint(cost.mean(), file=open('cost.txt', 'w'))
 
-    print 'Building sampler'
+    print 'Buliding sampler'
     f_init, f_next = build_sampler(tparams, model_options, trng)
 
     # before any regularizer
@@ -2219,7 +2122,7 @@ def train(dim_word=100, # word vector dimensionality
             uidx += 1
             use_noise.set_value(1.)
 
-            x, x_mask, y, y_mask = prepare_data(x, y, maxlen=maxlen,
+            x, x_mask, y, y_mask = prepare_data(x, y, maxlen=maxlen, 
                                                 n_words_src=n_words_src, n_words=n_words)
 
             if x == None:
@@ -2261,15 +2164,15 @@ def train(dim_word=100, # word vector dimensionality
                 # FIXME: random selection?
                 for jj in xrange(numpy.minimum(5,x.shape[1])):
                     stochastic = False
-                    sample, score = gen_sample(tparams, f_init, f_next, x[:,jj][:,None],
-                                               model_options, trng=trng, k=1, maxlen=30,
+                    sample, score = gen_sample(tparams, f_init, f_next, x[:,jj][:,None], 
+                                               model_options, trng=trng, k=1, maxlen=30, 
                                                stochastic=stochastic, argmax=True)
                     print 'Source ',jj,': ',
                     for vv in x[:,jj]:
                         if vv == 0:
                             break
                         if vv in word_idict_src:
-                            print word_idict_src[vv],
+                            print word_idict_src[vv], 
                         else:
                             print 'UNK',
                     print
@@ -2278,7 +2181,7 @@ def train(dim_word=100, # word vector dimensionality
                         if vv == 0:
                             break
                         if vv in word_idict:
-                            print word_idict[vv],
+                            print word_idict[vv], 
                         else:
                             print 'UNK',
                     print
@@ -2300,7 +2203,7 @@ def train(dim_word=100, # word vector dimensionality
                         if vv == 0:
                             break
                         if vv in word_idict:
-                            print word_idict[vv],
+                            print word_idict[vv], 
                         else:
                             print 'UNK',
                     print
@@ -2344,7 +2247,7 @@ def train(dim_word=100, # word vector dimensionality
         if estop:
             break
 
-    if best_p is not None:
+    if best_p is not None: 
         zipp(best_p, tparams)
 
     use_noise.set_value(0.)
@@ -2364,8 +2267,8 @@ def train(dim_word=100, # word vector dimensionality
         params = copy.copy(best_p)
     else:
         params = unzip(tparams)
-    numpy.savez(saveto, zipped_params=best_p, train_err=train_err,
-                valid_err=valid_err, test_err=test_err, history_errs=history_errs,
+    numpy.savez(saveto, zipped_params=best_p, train_err=train_err, 
+                valid_err=valid_err, test_err=test_err, history_errs=history_errs, 
                 **params)
 
     return train_err, valid_err, test_err
@@ -2386,6 +2289,6 @@ if __name__ == '__main__':
 
 
 
-
+    
 
 
