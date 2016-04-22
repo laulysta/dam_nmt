@@ -1501,18 +1501,25 @@ def build_model(tparams, options):
         proj_covVec_src = get_layer('gru')[1](tparams, emb_covVec_src, options,
                                               prefix='covVec_encoder',
                                               mask=x_mask)
+        sentence_rep_covVec_src = proj_covVec_src[0][-1]
+
 
         # Target
         emb_covVec_trg = tparams['Wemb_covVec_trg'][y.flatten()].reshape([n_timesteps_trg, n_samples, options['dim_word']])
         proj_covVec_trg = get_layer('gru')[1](tparams, emb_covVec_trg, options,
                                               prefix='covVec_decoder',
                                               mask=y_mask)
+        sentence_rep_covVec_trg = proj_covVec_trg[0][-1]
+        proj_covVec_trg_shifted = tensor.zeros_like(proj_covVec_trg[0])
+        proj_covVec_trg_shifted = tensor.set_subtensor(proj_covVec_trg_shifted[1:], proj_covVec_trg[0][:-1])
+
 
         # Make the source minus target matrix and concatenate to the embedings
-        covVec_src_m_trg = proj_covVec_src[0][-1] - proj_covVec_trg[0]
+        #covVec_src_m_trg = proj_covVec_src[0][-1] - proj_covVec_trg[0]
+        covVec_src_m_trg = sentence_rep_covVec_src - proj_covVec_trg_shifted
 
         # euclidean distance for the cost
-        covVec_diff = (proj_covVec_src[0][-1] - proj_covVec_trg[0][-1])
+        covVec_diff = (sentence_rep_covVec_src - sentence_rep_covVec_trg)
         covVec_eucl_cost = tensor.sqrt(tensor.pow(2, covVec_diff).sum(axis=1)).mean()
 
     else:
@@ -1580,7 +1587,7 @@ def build_sampler(tparams, options, trng):
         emb_covVec_src = tparams['Wemb_covVec_src'][x.flatten()].reshape([n_timesteps, n_samples, options['dim_word']])
         proj_covVec_src = get_layer('gru')[1](tparams, emb_covVec_src, options, prefix='covVec_encoder')
 
-        emb_covVec_sentence_src = proj_covVec_src[0][-1]
+        sentence_rep_covVec_src = proj_covVec_src[0][-1]
     ######################################
 
     # encoder
@@ -1606,15 +1613,15 @@ def build_sampler(tparams, options, trng):
     if options['decoder'].startswith('lstm'):
         outs += [init_memory]
     if options['covVec']:
-        outs += [emb_covVec_sentence_src[0]]
+        outs += [sentence_rep_covVec_src[0]]
     f_init = theano.function([x], outs, name='f_init', profile=profile)
     print 'Done'
 
     # x: 1 x 1
     y = tensor.vector('y_sampler', dtype='int64')
     y.tag.test_value = np.array([1])
-    emb_covVec_sentence_src = tensor.vector('emb_covVec_sentence_src', dtype='float32')
-    emb_covVec_sentence_src.tag.test_value = np.ones(20, dtype='float32')
+    sentence_rep_covVec_src = tensor.vector('sentence_rep_covVec_src', dtype='float32')
+    sentence_rep_covVec_src.tag.test_value = np.ones(20, dtype='float32')
     #emb_bow_trg = tensor.matrix('emb_bow_trg', dtype='float32')
 
     init_state = tensor.matrix('init_state', dtype='float32')
@@ -1634,17 +1641,22 @@ def build_sampler(tparams, options, trng):
     #####################################
     if options['covVec']:
         # Target: Compute the representation of a word and the previous ones at each time steps
-        emb_covVec_one_new_trg = tensor.switch(y[:,None] < 0, tensor.alloc(0., 1, tparams['Wemb_covVec_trg'].shape[1]),
-                                        tparams['Wemb_covVec_trg'][y])
+        #emb_covVec_one_new_trg = tensor.switch(y[:,None] < 0, tensor.alloc(0., 1, tparams['Wemb_covVec_trg'].shape[1]),
+        #                                tparams['Wemb_covVec_trg'][y])
 
         init_covVec_state = tensor.matrix('init_covVec_state', dtype='float32')
         init_covVec_state.tag.test_value = np.ones((1, 20), dtype='float32')
 
-        proj_covVec_trg = get_layer('gru')[1](tparams, emb_covVec_one_new_trg, options, prefix='covVec_decoder', one_step=True, init_state=init_covVec_state)
+        proj_covVec_trg = tensor.switch(y[:,None] < 0, [tensor.alloc(0., 1, options['dim'])],
+                                 get_layer('gru')[1](tparams, tparams['Wemb_covVec_trg'][y], options, prefix='covVec_decoder', one_step=True, init_state=init_covVec_state))
+
+
+
+        #proj_covVec_trg = get_layer('gru')[1](tparams, emb_covVec_one_new_trg, options, prefix='covVec_decoder', one_step=True, init_state=init_covVec_state)
 
         next_covVec_state = proj_covVec_trg[0]
 
-        covVec_src_m_trg = emb_covVec_sentence_src - next_covVec_state
+        covVec_src_m_trg = sentence_rep_covVec_src - next_covVec_state
 
     else:
         covVec_src_m_trg = None
@@ -1687,7 +1699,7 @@ def build_sampler(tparams, options, trng):
         inps += [init_memory]
         outs += [next_memory]
     if options['covVec']:
-        inps += [emb_covVec_sentence_src, init_covVec_state]
+        inps += [sentence_rep_covVec_src, init_covVec_state]
         outs += [next_covVec_state]
     f_next = theano.function(inps, outs, name='f_next', profile=profile)
     print 'Done'
@@ -1722,7 +1734,7 @@ def gen_sample(tparams, f_init, f_next, x, options, trng=None, k=1, maxlen=30,
     if options['decoder'].startswith('lstm'):
         next_memory = ret.pop(0)
     if options['covVec']:
-        emb_covVec_sentence_src = ret.pop(0)
+        sentence_rep_covVec_src = ret.pop(0)
     next_covVec_state = numpy.zeros((1, options['dim']), dtype='float32')
     next_w = -1 * numpy.ones((1,)).astype('int64')
 
@@ -1736,7 +1748,7 @@ def gen_sample(tparams, f_init, f_next, x, options, trng=None, k=1, maxlen=30,
         if options['decoder'].startswith('lstm'):
             inps += [next_memory]
         if options['covVec']:
-            inps += [emb_covVec_sentence_src, next_covVec_state]
+            inps += [sentence_rep_covVec_src, next_covVec_state]
 
         ret = f_next(*inps)
         next_p = ret.pop(0)
