@@ -750,10 +750,10 @@ def param_init_gru_cond(options, params, prefix='gru_cond', nin=None, dim=None, 
     if options['covVec_in_decoder']:
         print "Only when covVec_in_decoder is True"
 
-        W_covVec_decoder = norm_weight(nin,dim*2)
+        W_covVec_decoder = norm_weight(dim,dim*2)
         params[_p(prefix,'W_covVec_decoder')] = W_covVec_decoder
 
-        Wx_covVec_decoder = norm_weight(nin,dim)
+        Wx_covVec_decoder = norm_weight(dim,dim)
         params[_p(prefix,'Wx_covVec_decoder')] = Wx_covVec_decoder
 
     if options['covVec_in_attention']:
@@ -984,7 +984,8 @@ def gru_covVec_cond_layer(tparams, state_below, options, prefix='gru',
         pctx__ = tensor.tanh(pctx__)
         alpha = tensor.dot(pctx__, U_att)+c_tt
         alpha = alpha.reshape([alpha.shape[0], alpha.shape[1]])
-        alpha = tensor.exp(alpha)
+        alpha = tensor.exp(alpha-alpha.max(axis=0, keepdims=True))
+        # alpha = tensor.exp(alpha)
         if context_mask:
             alpha = alpha * context_mask
         alpha = alpha / alpha.sum(0, keepdims=True)
@@ -1422,8 +1423,7 @@ def init_params(options):
 
 
     if options['covVec_in_pred']:
-        params = get_layer('ff_nb')[0](options, params, prefix='ff_nb_logit_covVec', nin=options['dim_word'], nout=options['dim_word'], ortho=False)
-
+        params = get_layer('ff_nb')[0](options, params, prefix='ff_nb_logit_covVec', nin=options['dim'], nout=options['dim_word'], ortho=False)
 
     # readout
     params = get_layer('ff')[0](options, params, prefix='ff_logit_lstm', nin=options['dim'], nout=options['dim_word'], ortho=False)

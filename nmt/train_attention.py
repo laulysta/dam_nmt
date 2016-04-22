@@ -53,7 +53,7 @@ if not os.path.exists(dirPath):
         print e
         print 'Exeption was catch, will continue script \n'
 
-modelName = dirPath = os.path.join(dirPath, dirModelName + ".npz")
+modelName = os.path.join(dirPath, dirModelName + ".npz")
 
 ###################################################################################
 
@@ -88,10 +88,17 @@ elif dataset == "wmt_all_enfr":
     #batch_size = 64
     nb_batch_epoch = np.ceil(sizeTrainset/(batch_size*4))
 
+reload_ = False
+saveFreq = nb_batch_epoch
 
+# Resume
+# modelName = os.path.join(dirPath, "epoch0_nbUpd5100_epoch4_nbUpd25000_model_gru_europarl_enfr_620_1000_0.001_80.npz")
+# reload_ = True
+# saveFreq = 100
+# end Resume
 
 trainerr, validerr, testerr = train(saveto=modelName,
-                                    reload_=False,
+                                    reload_=reload_,
                                     dim_word=dim_word,
                                     dim=dim_model,
                                     encoder='gru',
@@ -112,7 +119,7 @@ trainerr, validerr, testerr = train(saveto=modelName,
                                     valid_batch_size=batch_size,
                                     validFreq=nb_batch_epoch, # freq in batch of computing cost for train, valid and test
                                     dispFreq=nb_batch_epoch, # freq of diplaying the cost of one batch (e.g.: 1 is diplaying the cost of each batch)
-                                    saveFreq=nb_batch_epoch, # freq of saving the model per batch
+                                    saveFreq=saveFreq, # freq of saving the model per batch
                                     sampleFreq=nb_batch_epoch, # freq of sampling per batch
                                     dataset=dataset,
                                     dictionary=dictionary_trg,
