@@ -980,7 +980,8 @@ def gru_covVec_cond_layer(tparams, state_below, options, prefix='gru',
         # attention
         pstate_ = tensor.dot(h1, W_comb_att)
         pctx__ = pctx_ + pstate_[None,:,:]
-        pctx__ += covVec_
+        if options['covVec_in_attention']:
+            pctx__ += covVec_
         pctx__ = tensor.tanh(pctx__)
         alpha = tensor.dot(pctx__, U_att)+c_tt
         alpha = alpha.reshape([alpha.shape[0], alpha.shape[1]])
@@ -1620,8 +1621,9 @@ def build_sampler(tparams, options, trng):
     # x: 1 x 1
     y = tensor.vector('y_sampler', dtype='int64')
     y.tag.test_value = np.array([1])
-    sentence_rep_covVec_src = tensor.vector('sentence_rep_covVec_src', dtype='float32')
-    sentence_rep_covVec_src.tag.test_value = np.ones(20, dtype='float32')
+    if options['covVec']:
+        sentence_rep_covVec_src = tensor.vector('sentence_rep_covVec_src', dtype='float32')
+        sentence_rep_covVec_src.tag.test_value = np.ones(20, dtype='float32')
     #emb_bow_trg = tensor.matrix('emb_bow_trg', dtype='float32')
 
     init_state = tensor.matrix('init_state', dtype='float32')
@@ -1735,7 +1737,7 @@ def gen_sample(tparams, f_init, f_next, x, options, trng=None, k=1, maxlen=30,
         next_memory = ret.pop(0)
     if options['covVec']:
         sentence_rep_covVec_src = ret.pop(0)
-    next_covVec_state = numpy.zeros((1, options['dim']), dtype='float32')
+        next_covVec_state = numpy.zeros((1, options['dim']), dtype='float32')
     next_w = -1 * numpy.ones((1,)).astype('int64')
 
     for ii in xrange(maxlen):
