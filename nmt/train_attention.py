@@ -44,11 +44,14 @@ if not os.path.exists(dirPath):
         print 'Exeption was catch, will continue script \n'
 
 if dataset == "sub_europarl":
-    dirModelName = "model_gru_sub_europarl_enfr_" + "_".join([str(dim_word), str(dim_model), str(lr), str(batch_size)])
+    dirModelName = "model_gru_sub_europarl_enfr_" + "_".join([str(dim_word), str(dim_model), str(lr), str(batch_size),
+                                                              str(args.euclidean_coeff), str(args.covVec_in_attention), str(args.covVec_in_decoder), str(args.covVec_in_pred)])
 elif dataset == "small_europarl_enfr":
-    dirModelName = "model_gru_europarl_enfr_" + "_".join([str(dim_word), str(dim_model), str(lr), str(batch_size)])
+    dirModelName = "model_gru_europarl_enfr_" + "_".join([str(dim_word), str(dim_model), str(lr), str(batch_size),
+                                                          str(args.euclidean_coeff), str(args.covVec_in_attention), str(args.covVec_in_decoder), str(args.covVec_in_pred)])
 elif dataset == "wmt_all_enfr":
-    dirModelName = "model_gru_wmt_all_enfr_" + "_".join([str(dim_word), str(dim_model), str(lr), str(batch_size)])
+    dirModelName = "model_gru_wmt_all_enfr_" + "_".join([str(dim_word), str(dim_model), str(lr), str(batch_size),
+                                                         str(args.euclidean_coeff), str(args.covVec_in_attention), str(args.covVec_in_decoder), str(args.covVec_in_pred)])
 else:
     sys.exit("Wrong dataset")
 
