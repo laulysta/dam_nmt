@@ -18,9 +18,9 @@ parser.add_argument('-bs', '--batch_size', required=False, default='64', help='S
 parser.add_argument('-out', '--out_dir', required=False, default='.', help='Output directory for the model')
 
 parser.add_argument('-ec', '--euclidean_coeff', default=0.1, type=float, help='Coefficient of the Euclidean distance in the cost (if coverage vector is used).')
-parser.add_argument('-a', '--covVec_in_attention', action="store_true", help='Coverage vector connected to the attentional part.')
-parser.add_argument('-d', '--covVec_in_decoder', action="store_true", help='Coverage vector connected to the decoder part.')
-parser.add_argument('-p', '--covVec_in_pred', action="store_true", help='Coverage vector connected to the prediction part.')
+parser.add_argument('-ca', '--covVec_in_attention', action="store_true", help='Coverage vector connected to the attentional part.')
+parser.add_argument('-cd', '--covVec_in_decoder', action="store_true", help='Coverage vector connected to the decoder part.')
+parser.add_argument('-cp', '--covVec_in_pred', action="store_true", help='Coverage vector connected to the prediction part.')
 
 
 
