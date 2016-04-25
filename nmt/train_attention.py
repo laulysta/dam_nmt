@@ -6,6 +6,7 @@ import argparse
 import time
 import datetime
 from nmt import train
+from os.path import join as pjoin
 
 # Parse the arguments
 parser = argparse.ArgumentParser()
@@ -14,6 +15,12 @@ parser.add_argument('-d', '--dim_model', required=False, default='200', help='Si
 parser.add_argument('-l', '--lr', required=False, default='0.001', help='learning rate')
 parser.add_argument('-data', '--dataset', required=False, default='sub_europarl', help='ex: sub_europarl, europarl')
 parser.add_argument('-bs', '--batch_size', required=False, default='64', help='Size of the batch')
+parser.add_argument('-out', '--out_dir', required=False, default='.', help='Output directory for the model')
+
+parser.add_argument('-ec', '--euclidean_coeff', default=0.1, type=float, help='Coefficient of the Euclidean distance in the cost (if coverage vector is used).')
+parser.add_argument('-a', '--covVec_in_attention', action="store_true", help='Coverage vector connected to the attentional part.')
+parser.add_argument('-d', '--covVec_in_decoder', action="store_true", help='Coverage vector connected to the decoder part.')
+parser.add_argument('-p', '--covVec_in_pred', action="store_true", help='Coverage vector connected to the prediction part.')
 
 
 
@@ -28,7 +35,7 @@ batch_size = int(args.batch_size)
 
 #Create names and folders
 ####################################################################################
-dirPath = 'saved_attentional_models_euclidean/'
+dirPath = pjoin(args.out_dir, 'saved_attentional_models_euclidean/')
 if not os.path.exists(dirPath):
     try:
         os.makedirs(dirPath)
@@ -45,7 +52,7 @@ elif dataset == "wmt_all_enfr":
 else:
     sys.exit("Wrong dataset")
 
-dirPath = os.path.join(dirPath, dirModelName)
+dirPath = pjoin(dirPath, dirModelName)
 if not os.path.exists(dirPath):
     try:
         os.makedirs(dirPath)
@@ -97,13 +104,13 @@ saveFreq = nb_batch_epoch
 # saveFreq = 100
 # end Resume
 
+covVec = args.covVec_in_attention or args.covVec_in_decoder or args.covVec_in_pred
 trainerr, validerr, testerr = train(saveto=modelName,
                                     reload_=reload_,
                                     dim_word=dim_word,
                                     dim=dim_model,
                                     encoder='gru',
-                                    decoder='gru_covVec_cond',
-                                    # decoder='gru_cond',
+                                    decoder='gru_covVec_cond' if covVec else 'gru_cond',
                                     hiero=None, #'gru_hiero', # or None
                                     max_epochs=100,
                                     n_words_src=n_words_src,
@@ -125,8 +132,8 @@ trainerr, validerr, testerr = train(saveto=modelName,
                                     dictionary=dictionary_trg,
                                     dictionary_src=dictionary_src,
                                     use_dropout=False,
-                                    euclidean_coeff=0.1,
-                                    covVec_in_attention=True,
-                                    covVec_in_decoder=False,
-                                    covVec_in_pred=False,
+                                    euclidean_coeff=args.euclidean_coeff,
+                                    covVec_in_attention=args.covVec_in_attention,
+                                    covVec_in_decoder=args.covVec_in_decoder,
+                                    covVec_in_pred=args.covVec_in_pred,
                                     clip_c=1.)

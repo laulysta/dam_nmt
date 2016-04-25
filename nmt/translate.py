@@ -43,7 +43,7 @@ def translate_model(queue, rqueue, pid, model, options, k, normalize):
             break
 
         idx, x = req[0], req[1]
-        print pid, '-', idx
+        #print pid, '-', idx
         seq = _translate(x)
 
         rqueue.put((idx, seq))
@@ -51,6 +51,7 @@ def translate_model(queue, rqueue, pid, model, options, k, normalize):
     return
 
 def main(model, dictionary, dictionary_target, source_file, saveto, k=5, normalize=False, n_process=5, chr_level=False):
+    print "Using {} processes".format(n_process)
 
     # load model model_options
     with open('%s.pkl'%model, 'rb') as f:

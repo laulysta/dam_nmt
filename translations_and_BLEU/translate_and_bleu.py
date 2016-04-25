@@ -1,5 +1,5 @@
 import sys, os
-from subprocess import check_output
+from subprocess import check_output, call
 import argparse
 import fcntl
 
@@ -20,19 +20,19 @@ def createDir(dirPath):
         except OSError as e:
             print e
             print 'Exeption was catch, will continue script \n'
-    
+
 
 def compute_translation_and_bleu(model_path, vocab_src_path, vocab_trg_path, txt_src_path, txt_trg_path, txt_trans_result_path):
-    
+
     translateFilePath = '../nmt/translate.py'
 
     #check_output('python ' + translateFilePath + ' -r 0.5 -n ' + model_path + ' ' + vocab_src_path + ' ' + vocab_trg_path + ' ' + txt_src_path + ' ' + txt_trans_result_path, shell=True)
-    check_output('python ' + translateFilePath + ' -n ' + model_path + ' ' + vocab_src_path + ' ' + vocab_trg_path + ' ' + txt_src_path + ' ' + txt_trans_result_path, shell=True)
+    call('python -u ' + translateFilePath + ' -p 7 ' + ' -n ' + model_path + ' ' + vocab_src_path + ' ' + vocab_trg_path + ' ' + txt_src_path + ' ' + txt_trans_result_path, shell=True)
 
     bleu_score = check_output('perl multi-bleu.perl ' + txt_trg_path + ' < ' +  txt_trans_result_path , shell=True)
-    
+
     return bleu_score
-    
+
 
 model_name = args.model_path.split('/')[-2]
 model_name_with_epoch = args.model_path.split('/')[-1]
@@ -41,12 +41,12 @@ savePathDir = 'translation_results_' + model_name + '/'
 createDir(savePathDir)
 
 savePathTranslationsDir = savePathDir + 'translations/'
-createDir(savePathTranslationsDir) 
+createDir(savePathTranslationsDir)
 
 result_file_name = (args.txt_src_path.split('/')[-1]).split('.')[0]
 trg_lang = (args.txt_trg_path.split('/')[-1]).split('.')[-1]
 txt_trans_result_path = savePathTranslationsDir + '/' + 'translation_' + model_name_with_epoch + '_' + result_file_name + '.' + trg_lang
-file_bleu_result_path = savePathDir + 'results_bleu_' + result_file_name 
+file_bleu_result_path = savePathDir + 'results_bleu_' + result_file_name
 
 
 bleu_score = compute_translation_and_bleu(args.model_path, args.vocab_src_path, args.vocab_trg_path, args.txt_src_path, args.txt_trg_path, txt_trans_result_path)
