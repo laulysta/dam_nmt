@@ -942,6 +942,8 @@ def gru_covVec_cond_layer(tparams, state_below, options, prefix='gru',
     # projected covVec
     if options['covVec_in_attention']:
         p_src_minus_trg = tensor.dot(covVec_src_m_trg, tparams[_p(prefix,'W_covVec_att')])
+    else:
+        p_src_minus_trg = tensor.alloc(0., covVec_src_m_trg.shape[0], 1)  # Dummy, won't be really used inside _step_slice.
 
     def _slice(_x, n, dim):
         if _x.ndim == 3:

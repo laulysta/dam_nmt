@@ -112,7 +112,7 @@ trainerr, validerr, testerr = train(saveto=modelName,
                                     dim_word=dim_word,
                                     dim=dim_model,
                                     encoder='gru',
-                                    decoder='gru_covVec_cond' if args.covVec_in_attention else 'gru_cond',
+                                    decoder='gru_covVec_cond' if args.covVec_in_attention or args.covVec_in_decoder else 'gru_cond',
                                     hiero=None, #'gru_hiero', # or None
                                     max_epochs=100,
                                     n_words_src=n_words_src,
