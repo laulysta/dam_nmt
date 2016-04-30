@@ -1519,7 +1519,8 @@ def build_model(tparams, options):
 
         # Make the source minus target matrix and concatenate to the embedings
         #covVec_src_m_trg = proj_covVec_src[0][-1] - proj_covVec_trg[0]
-        covVec_src_m_trg = sentence_rep_covVec_src - proj_covVec_trg_shifted
+        #covVec_src_m_trg = sentence_rep_covVec_src - proj_covVec_trg_shifted
+        covVec_src_m_trg = proj_covVec_trg_shifted
 
         # euclidean distance for the cost
         covVec_diff = (sentence_rep_covVec_src - sentence_rep_covVec_trg)
@@ -1660,7 +1661,8 @@ def build_sampler(tparams, options, trng):
 
         next_covVec_state = proj_covVec_trg[0]
 
-        covVec_src_m_trg = sentence_rep_covVec_src - next_covVec_state
+        #covVec_src_m_trg = sentence_rep_covVec_src - next_covVec_state
+        covVec_src_m_trg = next_covVec_state
 
     else:
         covVec_src_m_trg = None
