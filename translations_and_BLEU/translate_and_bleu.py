@@ -28,8 +28,20 @@ def compute_translation_and_bleu(model_path, vocab_src_path, vocab_trg_path, txt
 
     #check_output('python ' + translateFilePath + ' -r 0.5 -n ' + model_path + ' ' + vocab_src_path + ' ' + vocab_trg_path + ' ' + txt_src_path + ' ' + txt_trans_result_path, shell=True)
     call('python -u ' + translateFilePath + ' -p 7 ' + ' -n ' + model_path + ' ' + vocab_src_path + ' ' + vocab_trg_path + ' ' + txt_src_path + ' ' + txt_trans_result_path, shell=True)
+    # from subprocess import PIPE, Popen
+    # command_to_execute = 'python -u ' + translateFilePath + ' -p 7 ' + ' -n ' + model_path + ' ' + vocab_src_path + ' ' + vocab_trg_path + ' ' + txt_src_path + ' ' + txt_trans_result_path
+    # print command_to_execute
+    # process = Popen((command_to_execute).split(' '), stdout=PIPE, stderr=PIPE)
+    # stdout, stderr = process.communicate()
+    # print stdout, stderr
 
     bleu_score = check_output('perl multi-bleu.perl ' + txt_trg_path + ' < ' +  txt_trans_result_path , shell=True)
+    # # To print stdout and stderr use the following lines instead.
+    # from subprocess import PIPE, Popen
+    # process = Popen(('perl multi-bleu.perl ' + txt_trg_path + ' < ' +  txt_trans_result_path).split(' '), stdout=PIPE, stderr=PIPE)
+    # stdout, stderr = process.communicate()
+    # print stdout, stderr
+    # bleu_score = stdout
 
     return bleu_score
 
