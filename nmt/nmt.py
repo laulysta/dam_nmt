@@ -1707,7 +1707,7 @@ def build_sampler(tparams, options, trng):
     if options['covVec']:
         inps += [sentence_rep_covVec_src, init_covVec_state]
         outs += [next_covVec_state]
-    f_next = theano.function(inps, outs, name='f_next', profile=profile)
+    f_next = theano.function(inps, outs, name='f_next', profile=profile, on_unused_input='ignore')
     print 'Done'
 
     return f_init, f_next
