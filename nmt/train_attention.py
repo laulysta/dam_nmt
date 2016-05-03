@@ -35,7 +35,7 @@ batch_size = int(args.batch_size)
 
 #Create names and folders
 ####################################################################################
-dirPath = pjoin(args.out_dir, 'saved_attentional_models_euclidean/')
+dirPath = pjoin(args.out_dir, 'saved_attentional_models_euclidean_covVec_just_trg')
 if not os.path.exists(dirPath):
     try:
         os.makedirs(dirPath)
