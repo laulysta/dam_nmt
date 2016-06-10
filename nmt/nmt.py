@@ -750,16 +750,16 @@ def param_init_gru_cond(options, params, prefix='gru_cond', nin=None, dim=None, 
     if options['covVec_in_decoder']:
         print "Only when covVec_in_decoder is True"
 
-        W_covVec_decoder = norm_weight(dim,dim*2)
+        W_covVec_decoder = norm_weight(dim*2,dim*2)
         params[_p(prefix,'W_covVec_decoder')] = W_covVec_decoder
 
-        Wx_covVec_decoder = norm_weight(dim,dim)
+        Wx_covVec_decoder = norm_weight(dim*2,dim)
         params[_p(prefix,'Wx_covVec_decoder')] = Wx_covVec_decoder
 
     if options['covVec_in_attention']:
         print "Only when covVec_in_attention is True"
 
-        W_covVec_att = norm_weight(dim,dimctx)
+        W_covVec_att = norm_weight(dim*2,dimctx)
         params[_p(prefix,'W_covVec_att')] = W_covVec_att
 
 
@@ -910,11 +910,11 @@ def gru_cond_layer(tparams, state_below, options, prefix='gru',
 def gru_covVec_cond_layer(tparams, state_below, options, prefix='gru',
                         mask=None, context=None, one_step=False,
                         init_memory=None, init_state=None,
-                        context_mask=None, covVec_src_m_trg=None,
+                        context_mask=None, double_covVec=None,
                         **kwargs):
     print "Welcome to gru_covVec_cond_layer"
     assert context, 'Context must be provided'
-    assert covVec_src_m_trg, 'covVec_src_m_trg must be provided'
+    assert double_covVec, 'double_covVec must be provided'
 
     if one_step:
         assert init_state, 'previous state must be provided'
@@ -941,9 +941,9 @@ def gru_covVec_cond_layer(tparams, state_below, options, prefix='gru',
 
     # projected covVec
     if options['covVec_in_attention']:
-        p_src_minus_trg = tensor.dot(covVec_src_m_trg, tparams[_p(prefix,'W_covVec_att')])
+        p_src_minus_trg = tensor.dot(double_covVec, tparams[_p(prefix,'W_covVec_att')])
     else:
-        p_src_minus_trg = tensor.alloc(0., covVec_src_m_trg.shape[0], 1)  # Dummy, won't be really used inside _step_slice.
+        p_src_minus_trg = tensor.alloc(0., double_covVec.shape[0], 1)  # Dummy, won't be really used inside _step_slice.
 
     def _slice(_x, n, dim):
         if _x.ndim == 3:
@@ -955,8 +955,8 @@ def gru_covVec_cond_layer(tparams, state_below, options, prefix='gru',
     state_below_ = tensor.dot(state_below, tparams[_p(prefix, 'W')]) + tparams[_p(prefix, 'b')]
     if options['covVec_in_decoder']:
         print "Only when covVec_in_decoder is True"
-        p_covVecx = tensor.dot(covVec_src_m_trg, tparams[_p(prefix,'Wx_covVec_decoder')])
-        p_covVec_ = tensor.dot(covVec_src_m_trg, tparams[_p(prefix,'W_covVec_decoder')])
+        p_covVecx = tensor.dot(double_covVec, tparams[_p(prefix,'Wx_covVec_decoder')])
+        p_covVec_ = tensor.dot(double_covVec, tparams[_p(prefix,'W_covVec_decoder')])
         state_belowx += p_covVecx
         state_below_ += p_covVec_
     #state_belowc = tensor.dot(state_below, tparams[_p(prefix, 'Wi_att')])
@@ -1426,7 +1426,7 @@ def init_params(options):
 
 
     if options['covVec_in_pred']:
-        params = get_layer('ff_nb')[0](options, params, prefix='ff_nb_logit_covVec', nin=options['dim'], nout=options['dim_word'], ortho=False)
+        params = get_layer('ff_nb')[0](options, params, prefix='ff_nb_logit_covVec', nin=options['dim']*2, nout=options['dim_word'], ortho=False)
 
     # readout
     params = get_layer('ff')[0](options, params, prefix='ff_logit_lstm', nin=options['dim'], nout=options['dim_word'], ortho=False)
@@ -1518,16 +1518,16 @@ def build_model(tparams, options):
 
 
         # Make the source minus target matrix and concatenate to the embedings
-        #covVec_src_m_trg = proj_covVec_src[0][-1] - proj_covVec_trg[0]
-        #covVec_src_m_trg = sentence_rep_covVec_src - proj_covVec_trg_shifted
-        covVec_src_m_trg = proj_covVec_trg_shifted
+        covVec_src_m_trg = sentence_rep_covVec_src - proj_covVec_trg_shifted
+        covVec = proj_covVec_trg_shifted
+        double_covVec = tensor.concatenate([covVec, covVec_src_m_trg], axis=2)
 
         # euclidean distance for the cost
         covVec_diff = (sentence_rep_covVec_src - sentence_rep_covVec_trg)
         covVec_eucl_cost = tensor.sqrt(tensor.pow(2, covVec_diff).sum(axis=1)).mean()
 
     else:
-        covVec_src_m_trg = None
+        double_covVec = None
     ####################################
 
     # decoder
@@ -1538,7 +1538,7 @@ def build_model(tparams, options):
                                             one_step=False,
                                             init_state=init_state,
                                             init_memory=init_memory,
-                                            covVec_src_m_trg=covVec_src_m_trg)
+                                            double_covVec=double_covVec)
     proj_h = proj[0]
     if options['decoder'].endswith('simple'):
         ctxs = ctx[None,:,:]
@@ -1554,7 +1554,7 @@ def build_model(tparams, options):
     logit_prev = get_layer('ff_nb')[1](tparams, emb, options, prefix='ff_nb_logit_prev', activ='linear')
     logit_ctx = get_layer('ff_nb')[1](tparams, ctxs, options, prefix='ff_nb_logit_ctx', activ='linear')
     if options['covVec_in_pred']:
-        logit_covVec = get_layer('ff_nb')[1](tparams, covVec_src_m_trg, options, prefix='ff_nb_logit_covVec', activ='linear')
+        logit_covVec = get_layer('ff_nb')[1](tparams, double_covVec, options, prefix='ff_nb_logit_covVec', activ='linear')
         logit = tensor.tanh(logit_lstm+logit_prev+logit_ctx+logit_covVec)
     else:
         logit = tensor.tanh(logit_lstm+logit_prev+logit_ctx)
@@ -1661,11 +1661,12 @@ def build_sampler(tparams, options, trng):
 
         next_covVec_state = proj_covVec_trg[0]
 
-        #covVec_src_m_trg = sentence_rep_covVec_src - next_covVec_state
-        covVec_src_m_trg = next_covVec_state
+        covVec_src_m_trg = sentence_rep_covVec_src - next_covVec_state
+        covVec = next_covVec_state
+        double_covVec = tensor.concatenate([covVec, covVec_src_m_trg], axis=1)
 
     else:
-        covVec_src_m_trg = None
+        double_covVec = None
 
     proj = get_layer(options['decoder'])[1](tparams, emb, options,
                                             prefix='decoder',
@@ -1673,7 +1674,7 @@ def build_sampler(tparams, options, trng):
                                             one_step=True,
                                             init_state=init_state,
                                             init_memory=init_memory,
-                                            covVec_src_m_trg=covVec_src_m_trg)
+                                            double_covVec=double_covVec)
     if options['decoder'].endswith('simple'):
         next_state = proj
         ctxs = ctx
@@ -1688,7 +1689,7 @@ def build_sampler(tparams, options, trng):
     logit_prev = get_layer('ff_nb')[1](tparams, emb, options, prefix='ff_nb_logit_prev', activ='linear')
     logit_ctx = get_layer('ff_nb')[1](tparams, ctxs, options, prefix='ff_nb_logit_ctx', activ='linear')
     if options['covVec_in_pred']:
-        logit_covVec = get_layer('ff_nb')[1](tparams, covVec_src_m_trg, options, prefix='ff_nb_logit_covVec', activ='linear')
+        logit_covVec = get_layer('ff_nb')[1](tparams, double_covVec, options, prefix='ff_nb_logit_covVec', activ='linear')
         logit = tensor.tanh(logit_lstm+logit_prev+logit_ctx+logit_covVec)
     else:
         logit = tensor.tanh(logit_lstm+logit_prev+logit_ctx)
